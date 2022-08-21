@@ -18,7 +18,7 @@ pub async fn find(data: Data<Pool<Sqlite>>, body: Path<GetShortcut>) -> impl Res
     if result.is_ok() {
         let url: String = result.unwrap().try_get("url").unwrap();
         log::debug!("Found slug '{}' for url '{}'", body.slug.as_str(), url);
-        return HttpResponse::Found()
+        return HttpResponse::SeeOther()
             .append_header(("Location", url))
             .finish();
     }
