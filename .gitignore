@@ -12,7 +12,10 @@ Cargo.lock
 # Configuration
 .env
 
-# tmp files
+# Temporary files
 *.txt
-*.db
 .DS_Store
+
+# Data
+sqlite.db*
+*.csv

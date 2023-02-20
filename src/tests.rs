@@ -3,7 +3,8 @@ mod tests {
     use crate::{
         database::setup_database,
         health,
-        routes::{create, find},
+        routes::{create, delete, find},
+        schema::{DeleteShortcutAnwser, PutShortcutAnwser},
     };
     use actix_web::{
         http::{header, StatusCode},
@@ -11,7 +12,6 @@ mod tests {
         web::Data,
         App,
     };
-    use serde::Deserialize;
     use serde_json::json;
     use sqlx::{Pool, Sqlite};
 
@@ -23,13 +23,9 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    #[derive(Deserialize)]
-    struct PutShortcutAnwser {
-        slug: String,
-    }
     #[actix_web::test]
     async fn url_shortening() {
-        let initial_target_uri = "https://www.github.com";
+        let initial_target_uri = "https://github.com";
         let test_database_path = "/tmp/testing.db";
         let pool: Pool<Sqlite> = setup_database(format!("sqlite://{}", test_database_path)).await;
 
@@ -38,12 +34,13 @@ mod tests {
             App::new()
                 .app_data(Data::new(pool))
                 .service(create)
-                .service(find),
+                .service(find)
+                .service(delete),
         )
         .await;
         let interaction = TestRequest::put()
             .uri("/shortcut")
-            .set_json(json!({ "url": initial_target_uri }))
+            .set_json(json!({ "url": initial_target_uri, "slug": "gh" }))
             .send_request(&app)
             .await;
         assert_eq!(interaction.response().status(), StatusCode::CREATED);
@@ -72,7 +69,17 @@ mod tests {
             initial_target_uri
         );
 
-        // Clearnup the testing database
+        // Delete test entry
+        let interaction = TestRequest::delete()
+            .uri("/shortcut")
+            .set_json(json!({ "text": initial_target_uri }))
+            .send_request(&app)
+            .await;
+        assert_eq!(interaction.response().status(), StatusCode::OK);
+        let anwser: DeleteShortcutAnwser = test::read_body_json(interaction).await;
+        assert_eq!(anwser.rows_affected, 1);
+
+        // Cleanup the testing database
         std::fs::remove_file(test_database_path).expect("Testing database could not be deleted");
     }
 }
