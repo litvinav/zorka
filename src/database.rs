@@ -11,7 +11,7 @@ async fn migrate(pool: &Pool<Sqlite>) {
         url     TEXT                    NOT NULL
     );
     CREATE UNIQUE INDEX IF NOT EXISTS indx_slug ON shortcut (slug);";
-    match sqlx::query(&qry).execute(pool).await {
+    match sqlx::query(qry).execute(pool).await {
         Ok(_) => {}
         Err(e) => log::error!("{:?}", e),
     }
@@ -27,19 +27,13 @@ async fn seed(pool: &Pool<Sqlite>) {
                 ).expect("invalid regex");
 
             let mut data: Vec<String> = vec![];
-            for row in buf.lines() {
-                match row {
-                    Ok(content) => match regex.captures(&content) {
-                        Some(capture) => {
-                            if let Some(slug) = capture.name("slug") {
-                                if let Some(url) = capture.name("url") {
-                                    data.push(format!("('{}','{}')", slug.as_str(), url.as_str()));
-                                }
-                            }
+            for content in buf.lines().flatten() {
+                if let Some(capture) = regex.captures(&content) {
+                    if let Some(slug) = capture.name("slug") {
+                        if let Some(url) = capture.name("url") {
+                            data.push(format!("('{}','{}')", slug.as_str(), url.as_str()));
                         }
-                        None => {}
-                    },
-                    Err(_) => {}
+                    }
                 }
             }
             let qry = format!("INSERT OR REPLACE INTO shortcut VALUES {};", data.join(","));
@@ -65,5 +59,5 @@ pub async fn setup_database(db_filename: String) -> Pool<Sqlite> {
     migrate(&pool).await;
     seed(&pool).await;
 
-    return pool;
+    pool
 }

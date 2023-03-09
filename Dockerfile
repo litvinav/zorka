@@ -1,8 +1,10 @@
 FROM rust:1.67-alpine3.17
 WORKDIR /app
 
+COPY ./Cargo.* ./
 COPY ./src ./src
-COPY ./Cargo.toml ./Cargo.toml
+COPY ./assets ./assets
+COPY ./templates ./templates
 
 RUN apk add build-base libressl-dev --no-cache \
  && cargo build --release
