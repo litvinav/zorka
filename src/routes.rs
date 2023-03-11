@@ -9,6 +9,7 @@ use actix_web::{
 };
 use regex::Regex;
 use sqlx::{Pool, Row, Sqlite};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tera::{Context, Tera};
 
 #[get("/")]
@@ -24,7 +25,7 @@ pub async fn dashboard(
             .finish();
     }
 
-    match sqlx::query("SELECT slug,url FROM shortcut;")
+    match sqlx::query("SELECT slug,url,since,until FROM shortcut ORDER BY slug;")
         .fetch_all(data.as_ref())
         .await
     {
@@ -32,8 +33,20 @@ pub async fn dashboard(
             let items: Vec<ShortcutItem> = result
                 .iter()
                 .map(|item| ShortcutItem {
-                    slug: item.try_get("slug").unwrap(),
-                    url: item.try_get("url").unwrap(),
+                    slug: item.get("slug"),
+                    url: item.get("url"),
+                    now: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("time went backwards")
+                        .as_millis(),
+                    since: item
+                        .get::<String, &str>("since")
+                        .parse()
+                        .expect("not valid UNIX time."),
+                    until: item
+                        .get::<String, &str>("until")
+                        .parse()
+                        .expect("not valid UNIX time."),
                 })
                 .collect();
             match tera.render(
@@ -46,22 +59,93 @@ pub async fn dashboard(
                 Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
             }
         }
-        Err(_) => HttpResponse::NotFound().finish(),
+        Err(e) => HttpResponse::NotFound().body(e.to_string()),
     }
 }
 
+#[get("/s")]
+pub async fn render(
+    data: Data<Pool<Sqlite>>,
+    config: Data<Configuration>,
+    req: HttpRequest,
+) -> impl Responder {
+    if !is_authorized(config.as_ref(), req.headers().get("Authorization")) {
+        return HttpResponse::Unauthorized()
+            .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
+            .finish();
+    }
+
+    let csv = match sqlx::query("SELECT slug,url,since,until FROM shortcut;")
+        .fetch_all(data.as_ref())
+        .await
+    {
+        Ok(result) => result
+            .iter()
+            .map(|row| {
+                let slug: String = row.get("slug");
+                let url: String = row.get("url");
+                let since: String = row.get("since");
+                let until: String = row.get("until");
+                format!("{slug},{url},{since},{until}")
+            })
+            .collect::<Vec<String>>()
+            .join("\n"),
+        Err(_) => String::default(),
+    };
+    HttpResponse::Ok()
+        .append_header(("Content-Type", "text/csv; charset utf-8"))
+        .append_header(("Content-Disposition", "attachment; filename=\"seed.csv\""))
+        .body(csv)
+}
+
 #[get("/s/{slug}")]
-pub async fn find(data: Data<Pool<Sqlite>>, body: Path<GetShortcut>) -> impl Responder {
-    match sqlx::query("SELECT url FROM shortcut WHERE slug = ?;")
-        .bind(body.slug.as_str())
+pub async fn find(
+    data: Data<Pool<Sqlite>>,
+    tera: Data<Tera>,
+    path: Path<GetShortcut>,
+) -> impl Responder {
+    match sqlx::query("SELECT url,since,until FROM shortcut WHERE slug = ?;")
+        .bind(path.slug.as_str())
         .fetch_one(data.as_ref())
         .await
     {
         Ok(result) => {
-            let url: String = result.try_get("url").unwrap();
-            HttpResponse::SeeOther()
-                .append_header(("Location", url))
-                .finish()
+            let url: String = result.get("url");
+            let since: u128 = result
+                .get::<String, &str>("since")
+                .parse()
+                .expect("not valid UNIX time.");
+            let until: u128 = result
+                .get::<String, &str>("until")
+                .parse()
+                .expect("not valid UNIX time.");
+            let now: u128 = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_millis();
+
+            if now >= since && now <= until {
+                return HttpResponse::SeeOther()
+                    .append_header(("Location", url))
+                    .finish();
+            } else if now < since {
+                return match tera.render(
+                    "gate/countdown.html",
+                    &Context::from_serialize(Countdown { timestamp: since }).unwrap(),
+                ) {
+                    Ok(html) => HttpResponse::Ok()
+                        .insert_header(header::ContentType::html())
+                        .body(html),
+                    Err(_) => HttpResponse::InternalServerError().finish(),
+                };
+            } else {
+                return match tera.render("gate/blocker.html", &Context::new()) {
+                    Ok(html) => HttpResponse::Ok()
+                        .insert_header(header::ContentType::html())
+                        .body(html),
+                    Err(_) => HttpResponse::InternalServerError().finish(),
+                };
+            }
         }
         Err(_) => HttpResponse::NotFound().finish(),
     }
@@ -79,6 +163,7 @@ pub async fn create(
             .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
             .finish();
     }
+
     // Validation
     if body.slug.len() > 64 || body.slug.is_empty() {
         return HttpResponse::UnprocessableEntity().body("Provide a non empty slug (max. 64).");
@@ -86,21 +171,25 @@ pub async fn create(
 
     let regex =
         Regex::new(r"^https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)$")
-        .expect("invalid regex");
+        .expect("invalid url regex");
     if regex.captures(&body.url).is_none() {
         return HttpResponse::UnprocessableEntity().body("The provided URL is invalid.");
     }
 
     // Insert
-    match sqlx::query("INSERT OR REPLACE INTO shortcut(slug, url) VALUES($1,$2) RETURNING slug;")
-        .bind(body.slug.as_str())
-        .bind(body.url.as_str())
-        .fetch_one(data.as_ref())
-        .await
+    match sqlx::query(
+        "INSERT OR REPLACE INTO shortcut(slug,url,since,until) VALUES($1,$2,$3,$4) RETURNING slug;",
+    )
+    .bind(body.slug.as_str())
+    .bind(body.url.as_str())
+    .bind(body.since.to_string())
+    .bind(body.until.to_string())
+    .fetch_one(data.as_ref())
+    .await
     {
         Ok(response) => {
-            let slug: String = response.try_get("slug").unwrap();
-            log::debug!("Put a new url '{}' with the slug '{}'.", &body.url, &slug);
+            let slug: String = response.get("slug");
+            log::debug!("Put a new slug '{}'.", &slug);
             HttpResponse::Created().json(PutShortcutAnwser { slug })
         }
         Err(_) => HttpResponse::InternalServerError().finish(),

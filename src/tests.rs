@@ -89,7 +89,12 @@ mod testing {
         .await;
         let interaction = TestRequest::put()
             .uri("/s")
-            .set_json(json!({ "url": initial_target_uri, "slug": "gh" }))
+            .set_json(json!({
+                "url": initial_target_uri,
+                "slug": "gh",
+                "since": 0_u128,
+                "until": 253370764861000_u128
+            }))
             .send_request(&app)
             .await;
         assert_eq!(interaction.response().status(), StatusCode::CREATED);
