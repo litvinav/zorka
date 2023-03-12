@@ -10,3 +10,4 @@ package*.json
 /*.sh
 /*.css
 /*.yaml
+!/configuration.yaml

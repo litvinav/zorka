@@ -3,7 +3,7 @@ mod testing {
     use std::{thread, time::Duration};
 
     use crate::{
-        authentication::{AuthConfig, AuthType, Configuration},
+        configuration::{Configuration, Internationalization},
         database::setup_database,
         health,
         routes::*,
@@ -36,10 +36,8 @@ mod testing {
         let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
         // Setup with Basic Authorization protection
         let config = Configuration {
-            auth: Some(AuthConfig {
-                kind: AuthType::Basic,
-                header: "Basic dXNlcm5hbWU6cGFzc3dvcmQ=".to_string(),
-            }),
+            auth: crate::configuration::Authentication::Basic { header: "Basic dXNlcm5hbWU6cGFzc3dvcmQ=".to_string() },
+            i18n: Internationalization::default()
         };
         let app = test::init_service(
             App::new()
@@ -74,7 +72,10 @@ mod testing {
         let test_database_path = "/tmp/url_shortening.db";
         let pool: Pool<Sqlite> = setup_database(format!("sqlite://{}", test_database_path)).await;
         let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
-        let config = Configuration { auth: None };
+        let config = Configuration {
+            auth: crate::configuration::Authentication::None,
+            i18n: Internationalization::default(),
+        };
 
         // Put the URL into the database to be fetched
         let app = test::init_service(
@@ -92,6 +93,7 @@ mod testing {
             .set_json(json!({
                 "url": initial_target_uri,
                 "slug": "gh",
+                "approval": false,
                 "since": 0_u128,
                 "until": 253370764861000_u128
             }))

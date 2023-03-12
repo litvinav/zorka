@@ -1,7 +1,7 @@
 FROM rust:1.67-alpine3.17
 WORKDIR /app
 
-COPY ./Cargo.* ./
+COPY ./configuration.yaml ./Cargo.* ./
 COPY ./src ./src
 COPY ./assets ./assets
 COPY ./templates ./templates

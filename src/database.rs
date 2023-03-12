@@ -9,6 +9,7 @@ async fn migrate(pool: &Pool<Sqlite>) {
     let qry = "CREATE TABLE IF NOT EXISTS shortcut (
         slug    TEXT    PRIMARY KEY     NOT NULL,
         url     TEXT                    NOT NULL,
+        status  TEXT                    NOT NULL,
         since   TEXT                    NOT NULL,
         until   TEXT                    NOT NULL
     );
@@ -19,27 +20,29 @@ async fn migrate(pool: &Pool<Sqlite>) {
 }
 
 async fn seed(pool: &Pool<Sqlite>) {
-    match fs::File::open("./seed.csv") {
+    match fs::File::open(concat!(env!("CARGO_MANIFEST_DIR"), "/seed.csv")) {
         Ok(file) => {
             let buf = BufReader::new(file);
             let regex =
                 Regex::new(
-                    r"^(?P<slug>[a-z0-9]+),(?P<url>https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)),(?P<since>\d+),(?P<until>\d+)$"
+                    r"^(?P<slug>[a-z0-9]+),(?P<url>https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)),(?P<status>((un)?trusted)),(?P<since>\d+),(?P<until>\d+)$"
                 ).expect("invalid regex");
 
             let mut data: Vec<String> = vec![];
             for content in buf.lines().flatten() {
                 if let Some(capture) = regex.captures(&content) {
-                    if let (Some(slug), Some(url), Some(since), Some(until)) = (
+                    if let (Some(slug), Some(url), Some(status), Some(since), Some(until)) = (
                         capture.name("slug"),
                         capture.name("url"),
+                        capture.name("status"),
                         capture.name("since"),
                         capture.name("until"),
                     ) {
                         data.push(format!(
-                            "('{}','{}','{}','{}')",
+                            "('{}','{}','{}','{}','{}')",
                             slug.as_str(),
                             url.as_str(),
+                            status.as_str(),
                             since.as_str(),
                             until.as_str()
                         ));

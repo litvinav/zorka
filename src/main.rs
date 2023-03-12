@@ -1,8 +1,8 @@
-use crate::{authentication::get_config, routes::*};
+use crate::{configuration::get_config, routes::*};
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use tera::Tera;
 
-mod authentication;
+mod configuration;
 mod database;
 mod routes;
 mod schema;
@@ -23,7 +23,6 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .service(health)
-            .service(favicon)
             .app_data(web::Data::new(config.clone()))
             .app_data(web::Data::new(pool.clone()))
             .app_data(web::Data::new(tera.clone()))

@@ -1,0 +1,9 @@
+auth: none
+i18n:
+  lang: en
+  dir: ltr
+  countdown: The link you want to reach will be available soon.
+  blocker: The link you are trying to reach is no longer reachable.
+  approval:
+    label: Are you sure you want to be redirected to the following URL?
+    button: continue

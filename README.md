@@ -26,52 +26,87 @@ Of course, mixed usage is also possible. Notice the `/s` route that generates th
 
 ### Gated routes
 
-| Countdown                             | Blocker                               |
-| ------------------------------------- | ------------------------------------- |
-| ![countdown](/docs/img/countdown.png) | ![blocker](/docs/img/blocker.png)     |
+| Countdown                             | Approval                              | Blocker                               |
+| ------------------------------------- | ------------------------------------- | ------------------------------------- |
+| ![countdown](/docs/img/countdown.png) | ![approval](/docs/img/approval.png)   | ![blocker](/docs/img/blocker.png)     |
 
-These pages display multiple languages in order to increase your client reach.
+These client pages support light and dark mode. Since i cannot cover all variety of languages, Zorka expects you to bring your own internationalization. You can use [the default configuration](./configuration.yaml) for English or use it as reference for your language.
+
+Countdown is displayed as a yellow clock gate on the dashboard.
+
+Approval is displayed as a blue shield gate on the dashboard.
+
+Blocker is displayed as a red stop sign gate on the dashboard.
 
 ### Authentication
 
 The current idea around Zorka is to only expose `/s/:slug` routes but if necessary,
-you can protect the shortcut CRUD and the dashboard routes via a fixed username and password.
+you can protect the shortcut CRUD operations and the dashboard routes via a fixed username and password.
 
-This can be achieved via a environment variable with the actual value of the Basic Authorization header.
-
-To get the header value, run this in the console of your browser. Replace username and password with actual values.
-```js
-console.log("Basic " + btoa("username:password"))
-```
-☝ This will give you the AUTH env value from the example.
+Please refer to 'Configuration via configuration.yaml' in the examples section, if you are interested in authentication on the admin routes.
 
 ## Examples
 
-Seeding with a seed.csv
+#### Seeding with a seed.csv
 ```yaml
-rmbl,https://rumble.com/,0,253370764861000
-ysd,https://yandex.ru/search/?text=yandex+self+driving,0,1678406461000
-zorka,https://github.com/litvinav/zorka,1679270461000,253370764861000
+rmbl,https://rumble.com/,trusted,0,253370764861000
+falcon,https://www.spacex.com/vehicles/falcon-9,untrusted,0,253370764861000
+ysd,https://yandex.ru/search/?text=yandex+self+driving,trusted,0,1678406461000
+zorka,https://github.com/litvinav/zorka,untrusted,1679270461000,253370764861000
 ```
-Each line consists of the slug, a full url, and the two values for the availability window as two u128 values, representing milliseconds since the unix epoch. For example in JavaScript you can get the date with `new Date().getTime()`.
+Each line consists of the slug, a full url, trust and the two values for the availability window as two u128 values, representing milliseconds since the unix epoch. For example in JavaScript you can get the date with `new Date().getTime()`.
 
-Compose:
+The slug can be any text with a length bigger than 0 up to 64.
+The trust level can be currently set to 'trusted' and 'untrusted'. In case of untrusted the user has to approve his redirect and sees the URL he will be visiting.
+
+#### Configuration via configuration.yaml
+```yaml
+auth:
+  basic:
+    username: username
+    password: password
+i18n:
+  lang: en
+  dir: ltr
+  countdown: The link you want to reach will be available soon.
+  blocker: The link you are trying to reach is no longer reachable.
+  approval:
+    label: Are you sure you want to be redirected to the following URL?
+    button: to the stars 🚀
+```
+If you are not interested in the authentication, set the auth to none like so:
+
+`auth: none`
+
+#### Deployment via compose.yaml
 ```yaml
 services:
   zorka:
     image: litvinav/zorka:latest
     environment:
-      AUTH: "Basic dXNlcm5hbWU6cGFzc3dvcmQ="
       RUST_LOG: "zorka=info"
+      # remove or set to not "true" to keep config
+      DELETE_CONFIG: "true"
     ports:
     - 8080:8080
     volumes:
     - ./seed.csv:/app/seed.csv:ro
+    # config will be deleted on launch because of DELETE_CONFIG
+    - ./configuration.yaml:/app/configuration.yaml
 ```
 If you are feeling paranoid or cannot use a amd64 image, you can always build Zorka from source and store the image in your registry.
+The configuration file will be deleted on launch if DELETE_CONFIG is set to "true". This will help you to hide the the auth values in the case you are protecting the shortcut manipulation routes BUT for example 'restart: always' in docker will fail, due to a missing file.
 
 ### Preview
+
+Admin dashboard
 
 | Dashboard Desktop                 | Dashboard Mobile                |
 | --------------------------------- | ------------------------------- |
 | ![desktop](/docs/img/desktop.png) | ![mobile](/docs/img/mobile.png) |
+
+Client pages variants
+
+| Dark Mode                                       | Light Mode                                             |
+| ----------------------------------------------- | ------------------------------------------------------ |
+| ![dark mode countdown](/docs/img/countdown.png) | ![light mode countdown](/docs/img/countdown_light.png) |

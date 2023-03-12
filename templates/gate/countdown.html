@@ -1,24 +1,19 @@
 <!DOCTYPE html>
-<html lang="">
+<html lang="{{lang}}" dir="{{dir}}">
 
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link href="/assets/style.css" rel="stylesheet">
-  <script async src="/assets/script.js"></script>
+  <link rel="icon" href="data:,">
 </head>
 
-<body class="bg-black text-white h-screen flex justify-center items-center">
+<body class="bg-white text-black dark:bg-black dark:text-white h-screen flex justify-center items-center">
   <div class="px-4">
-    <div id="clock" class="text-center text-7xl pt-4 pb-16">&nbsp;</div>
-    <h1 lang="en" dir="ltr">The link you want to reach will be available soon.</h1>
-    <h1 lang="de" dir="ltr">Der Link, den Sie erreichen möchten, wird bald erreichbar sein.</h1>
-    <h1 lang="ru" dir="ltr">Ссылка, по которой вы пытаетесь перейти, скоро будет доступна.</h1>
-    <h1 lang="cn" dir="ltr">你想到达的链接很快就会出现。</h1>
-    <h1 lang="es" dir="ltr">El enlace al que desea llegar estará disponible pronto.</h1>
-    <h1 lang="fr" dir="ltr">Le lien que vous souhaitez atteindre sera bientôt disponible.</h1>
-    <h1 lang="ar" dir="rtl">سيكون الرابط الذي تريد الوصول إليه متاحا قريبا.</h1>
+    <div id="clock" class="text-center text-7xl pt-4 pb-16"
+      style="text-shadow: 0 4px 60px #3456ac, 0 0px 20px #8aa4e6;">&nbsp;</div>
+    <p>{{label}}</p>
   </div>
 
   <script>
@@ -26,12 +21,13 @@
     const clock = document.getElementById('clock')
     const timeinterval = setInterval(() => {
       const total = deadline - Date.now()
-      const seconds = Math.floor( (total/1000) % 60 )
-      const minutes = Math.floor( (total/1000/60) % 60 )
-      const hours = Math.floor( total/(1000*60*60) )
-      clock.innerHTML = hours.toString().padStart(2, '0') + ':' +
-                        minutes.toString().padStart(2, '0') + ':' +
-                        seconds.toString().padStart(2, '0')
+      const seconds = Math.floor((total / 1000) % 60)
+      const minutes = Math.floor((total / 1000 / 60) % 60)
+      const hours = Math.floor(total / (1000 * 60 * 60))
+      clock.innerHTML =
+        hours.toString().padStart(2, '0') + ':' +
+        minutes.toString().padStart(2, '0') + ':' +
+        seconds.toString().padStart(2, '0')
       if (total <= 0) {
         clearInterval(timeinterval)
         clock.innerHTML = '00:00:00'

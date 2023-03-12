@@ -1,10 +1,10 @@
-use crate::{authentication::*, schema::*};
+use crate::{configuration::*, schema::*};
 use actix_files::NamedFile;
 use actix_web::{
     delete, get,
     http::header,
     put,
-    web::{self, Data, Json, Path},
+    web::{Data, Json, Path},
     HttpRequest, HttpResponse, Responder,
 };
 use regex::Regex;
@@ -25,7 +25,7 @@ pub async fn dashboard(
             .finish();
     }
 
-    match sqlx::query("SELECT slug,url,since,until FROM shortcut ORDER BY slug;")
+    match sqlx::query("SELECT slug,url,since,until,status FROM shortcut ORDER BY slug;")
         .fetch_all(data.as_ref())
         .await
     {
@@ -35,6 +35,7 @@ pub async fn dashboard(
                 .map(|item| ShortcutItem {
                     slug: item.get("slug"),
                     url: item.get("url"),
+                    status: item.get("status"),
                     now: SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("time went backwards")
@@ -75,7 +76,7 @@ pub async fn render(
             .finish();
     }
 
-    let csv = match sqlx::query("SELECT slug,url,since,until FROM shortcut;")
+    let csv = match sqlx::query("SELECT slug,url,status,since,until FROM shortcut;")
         .fetch_all(data.as_ref())
         .await
     {
@@ -84,9 +85,10 @@ pub async fn render(
             .map(|row| {
                 let slug: String = row.get("slug");
                 let url: String = row.get("url");
+                let status: String = row.get("status");
                 let since: String = row.get("since");
                 let until: String = row.get("until");
-                format!("{slug},{url},{since},{until}")
+                format!("{slug},{url},{status},{since},{until}")
             })
             .collect::<Vec<String>>()
             .join("\n"),
@@ -102,20 +104,22 @@ pub async fn render(
 pub async fn find(
     data: Data<Pool<Sqlite>>,
     tera: Data<Tera>,
+    config: Data<Configuration>,
     path: Path<GetShortcut>,
 ) -> impl Responder {
-    match sqlx::query("SELECT url,since,until FROM shortcut WHERE slug = ?;")
+    match sqlx::query("SELECT url,since,until,status FROM shortcut WHERE slug = ?;")
         .bind(path.slug.as_str())
         .fetch_one(data.as_ref())
         .await
     {
         Ok(result) => {
             let url: String = result.get("url");
-            let since: u128 = result
+            let status: String = result.get("status");
+            let available_since: u128 = result
                 .get::<String, &str>("since")
                 .parse()
                 .expect("not valid UNIX time.");
-            let until: u128 = result
+            let available_until: u128 = result
                 .get::<String, &str>("until")
                 .parse()
                 .expect("not valid UNIX time.");
@@ -124,28 +128,50 @@ pub async fn find(
                 .expect("time went backwards")
                 .as_millis();
 
-            if now >= since && now <= until {
-                return HttpResponse::SeeOther()
+            if now >= available_since && now <= available_until {
+                if status == "untrusted" {
+                    let ctx = Context::from_serialize(Approval {
+                        url,
+                        dir: config.i18n.dir.clone(),
+                        lang: config.i18n.lang.clone(),
+                        label: config.i18n.approval.label.clone(),
+                        button: config.i18n.approval.button.clone(),
+                    }).unwrap();
+                    if let Ok(html) = tera.render("gate/approval.html", &ctx) {
+                         return HttpResponse::Ok()
+                                .insert_header(header::ContentType::html())
+                                .body(html);
+                    }
+                } else {
+                    return HttpResponse::SeeOther()
                     .append_header(("Location", url))
                     .finish();
-            } else if now < since {
-                return match tera.render(
-                    "gate/countdown.html",
-                    &Context::from_serialize(Countdown { timestamp: since }).unwrap(),
-                ) {
-                    Ok(html) => HttpResponse::Ok()
+                }
+            } else if now < available_since {
+                let ctx = Context::from_serialize(Countdown {
+                    timestamp: available_since,
+                    dir: config.i18n.dir.clone(),
+                    lang: config.i18n.lang.clone(),
+                    label: config.i18n.countdown.clone(),
+                }).unwrap();
+                if let Ok(html) = tera.render("gate/countdown.html",&ctx) {
+                    return HttpResponse::Ok()
                         .insert_header(header::ContentType::html())
-                        .body(html),
-                    Err(_) => HttpResponse::InternalServerError().finish(),
+                        .body(html);
                 };
             } else {
-                return match tera.render("gate/blocker.html", &Context::new()) {
-                    Ok(html) => HttpResponse::Ok()
-                        .insert_header(header::ContentType::html())
-                        .body(html),
-                    Err(_) => HttpResponse::InternalServerError().finish(),
-                };
+                let ctx = Context::from_serialize(Blocker {
+                    dir: config.i18n.dir.clone(),
+                    lang: config.i18n.lang.clone(),
+                    label: config.i18n.blocker.clone(),
+                }).unwrap();
+                if let Ok(html) =  tera.render("gate/blocker.html", &ctx) {
+                    return HttpResponse::Ok()
+                    .insert_header(header::ContentType::html())
+                    .body(html);
+                }
             }
+            HttpResponse::InternalServerError().finish()
         }
         Err(_) => HttpResponse::NotFound().finish(),
     }
@@ -178,10 +204,11 @@ pub async fn create(
 
     // Insert
     match sqlx::query(
-        "INSERT OR REPLACE INTO shortcut(slug,url,since,until) VALUES($1,$2,$3,$4) RETURNING slug;",
+        "INSERT OR REPLACE INTO shortcut(slug,url,status,since,until) VALUES($1,$2,$3,$4,$5) RETURNING slug;",
     )
     .bind(body.slug.as_str())
     .bind(body.url.as_str())
+    .bind(if body.approval {"untrusted"} else {"trusted"})
     .bind(body.since.to_string())
     .bind(body.until.to_string())
     .fetch_one(data.as_ref())
@@ -228,13 +255,8 @@ pub async fn health() -> impl Responder {
     HttpResponse::Ok()
 }
 
-#[get("/favicon.ico")]
-pub async fn favicon() -> impl Responder {
-    HttpResponse::NoContent()
-}
-
 #[get("/assets/{file:.*}")]
-async fn assets(req: HttpRequest, path: web::Path<Assets>) -> HttpResponse {
+async fn assets(req: HttpRequest, path: Path<Assets>) -> HttpResponse {
     match NamedFile::open(format!(
         "{}/assets/{}",
         env!("CARGO_MANIFEST_DIR"),
@@ -250,7 +272,7 @@ async fn assets(req: HttpRequest, path: web::Path<Assets>) -> HttpResponse {
             res
         }
         Err(err) => {
-            eprintln!("Error opening {}: {}", path.file, err);
+            println!("Error opening {}: {}", path.file, err);
             HttpResponse::InternalServerError().finish()
         }
     }

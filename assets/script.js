@@ -91,6 +91,23 @@ function hide(event) {
     form.classList.add('hidden')
   }
 }
+
+
+const svgs = {
+  reachable: '',
+  countdown: `<svg fill="#ffd700" class="inline-block" fill="currentColor" focusable="false" aria-hidden="true"
+  viewBox="0 0 24 24" height="24" width="24" title="Countdown">
+  <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm3.3 14.71L11 12.41V7h2v4.59l3.71 3.71-1.42 1.41z"></path>
+</svg>`,
+  blocker: `<svg fill="#e14148" class="inline-block" focusable="false" aria-hidden="true"
+  viewBox="0 0 24 24" height="24" width="24" title="Blocker">
+  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z"></path>
+</svg>`,
+  trusted: '',
+  untrusted: `<svg fill="#4169e1" class="inline-block" focusable="false" aria-hidden="true" viewBox="0 0 24 24" height="24" width="24" title="Approval">
+  <path d="M12 2 4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm-1.06 13.54L7.4 12l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41-5.64 5.66z"></path>
+</svg>`
+}
 function put(event) {
   try {
     if (event.isTrusted && event.currentTarget == event.target && event.target instanceof HTMLFormElement) {
@@ -103,6 +120,7 @@ function put(event) {
       form.fromtime = form.fromtime ? form.fromtime.toString() : '00:00'
       form.todate   = form.todate ? form.todate.toString() : "9999-01-01"
       form.totime   = form.totime ? form.totime.toString() : '00:00'
+      form.approval = form.approval == "on"
 
       const since = new Date(form.fromdate+'T'+form.fromtime).getTime()
       const until = new Date(form.todate+'T'+form.totime).getTime()
@@ -113,6 +131,7 @@ function put(event) {
         body: JSON.stringify({
           slug: form.slug,
           url: form.url,
+          approval: form.approval,
           since,
           until,
         }),
@@ -120,7 +139,8 @@ function put(event) {
       .then((res) => {
         if (res.status < 300) {
           const now = Date.now()
-          const gate = now < since ? 'countdown' : now > until ? 'blocked' : 'reachable'
+          const gate = now < since ? svgs['countdown'] : now > until ? svgs['blocked'] : svgs['reachable']
+          const trust = form.approval ? svgs['untrusted'] : svgs['trusted']
           const row = document.createElement('tr')
           row.id = form.slug
           row.innerHTML = `<td class="px-4 py-2 border border-offblack2">
@@ -138,7 +158,7 @@ function put(event) {
           </td>
           <td class="px-4 py-2 border border-offblack2 truncate hidden md:table-cell">${form.url}</td>
           <td class="px-4 py-2 border border-offblack2 truncate hidden md:table-cell" data-since="${since}"
-            data-until="${until}">${gate}</td>
+            data-until="${until}">${gate} ${trust}</td>
           <td class="px-4 py-2 border border-offblack2">
             <button
               class="group/edit transition-colors hover:text-blue-500 px-1 focus:outline focus:outline-1 active:outline-none focus:outline-solid"
