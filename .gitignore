@@ -1,13 +1,11 @@
 /target
 **/*.rs.bk
-.env
-*.txt
-.DS_Store
 sqlite.db*
+.*
+*.txt
 *.csv
 node_modules
 package*.json
 /*.sh
-/*.css
 /*.yaml
 !/configuration.yaml

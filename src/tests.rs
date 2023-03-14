@@ -36,8 +36,10 @@ mod testing {
         let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
         // Setup with Basic Authorization protection
         let config = Configuration {
-            auth: crate::configuration::Authentication::Basic { header: "Basic dXNlcm5hbWU6cGFzc3dvcmQ=".to_string() },
-            i18n: Internationalization::default()
+            auth: crate::configuration::Authentication::Basic {
+                header: "Basic dXNlcm5hbWU6cGFzc3dvcmQ=".to_string(),
+            },
+            i18n: Internationalization::default(),
         };
         let app = test::init_service(
             App::new()

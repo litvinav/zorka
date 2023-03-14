@@ -4,10 +4,11 @@ use actix_web::{
     delete, get,
     http::header,
     put,
-    web::{Data, Json, Path},
+    web::{Data, Json, Path, Query},
     HttpRequest, HttpResponse, Responder,
 };
 use regex::Regex;
+use serde_json::Value;
 use sqlx::{Pool, Row, Sqlite};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tera::{Context, Tera};
@@ -19,10 +20,8 @@ pub async fn dashboard(
     config: Data<Configuration>,
     req: HttpRequest,
 ) -> impl Responder {
-    if !is_authorized(config.as_ref(), req.headers().get("Authorization")) {
-        return HttpResponse::Unauthorized()
-            .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
-            .finish();
+    if let Some(res) = handle_authorization(config.as_ref(), req.headers()).await {
+        return res;
     }
 
     match sqlx::query("SELECT slug,url,since,until,status FROM shortcut ORDER BY slug;")
@@ -70,10 +69,8 @@ pub async fn render(
     config: Data<Configuration>,
     req: HttpRequest,
 ) -> impl Responder {
-    if !is_authorized(config.as_ref(), req.headers().get("Authorization")) {
-        return HttpResponse::Unauthorized()
-            .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
-            .finish();
+    if let Some(res) = handle_authorization(config.as_ref(), req.headers()).await {
+        return res;
     }
 
     let csv = match sqlx::query("SELECT slug,url,status,since,until FROM shortcut;")
@@ -136,16 +133,17 @@ pub async fn find(
                         lang: config.i18n.lang.clone(),
                         label: config.i18n.approval.label.clone(),
                         button: config.i18n.approval.button.clone(),
-                    }).unwrap();
+                    })
+                    .unwrap();
                     if let Ok(html) = tera.render("gate/approval.html", &ctx) {
-                         return HttpResponse::Ok()
-                                .insert_header(header::ContentType::html())
-                                .body(html);
+                        return HttpResponse::Ok()
+                            .insert_header(header::ContentType::html())
+                            .body(html);
                     }
                 } else {
                     return HttpResponse::SeeOther()
-                    .append_header(("Location", url))
-                    .finish();
+                        .append_header(("Location", url))
+                        .finish();
                 }
             } else if now < available_since {
                 let ctx = Context::from_serialize(Countdown {
@@ -153,8 +151,9 @@ pub async fn find(
                     dir: config.i18n.dir.clone(),
                     lang: config.i18n.lang.clone(),
                     label: config.i18n.countdown.clone(),
-                }).unwrap();
-                if let Ok(html) = tera.render("gate/countdown.html",&ctx) {
+                })
+                .unwrap();
+                if let Ok(html) = tera.render("gate/countdown.html", &ctx) {
                     return HttpResponse::Ok()
                         .insert_header(header::ContentType::html())
                         .body(html);
@@ -164,11 +163,12 @@ pub async fn find(
                     dir: config.i18n.dir.clone(),
                     lang: config.i18n.lang.clone(),
                     label: config.i18n.blocker.clone(),
-                }).unwrap();
-                if let Ok(html) =  tera.render("gate/blocker.html", &ctx) {
+                })
+                .unwrap();
+                if let Ok(html) = tera.render("gate/blocker.html", &ctx) {
                     return HttpResponse::Ok()
-                    .insert_header(header::ContentType::html())
-                    .body(html);
+                        .insert_header(header::ContentType::html())
+                        .body(html);
                 }
             }
             HttpResponse::InternalServerError().finish()
@@ -184,10 +184,8 @@ pub async fn create(
     config: Data<Configuration>,
     req: HttpRequest,
 ) -> impl Responder {
-    if !is_authorized(config.as_ref(), req.headers().get("Authorization")) {
-        return HttpResponse::Unauthorized()
-            .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
-            .finish();
+    if let Some(res) = handle_authorization(config.as_ref(), req.headers()).await {
+        return res;
     }
 
     // Validation
@@ -230,11 +228,10 @@ pub async fn delete(
     config: Data<Configuration>,
     req: HttpRequest,
 ) -> impl Responder {
-    if !is_authorized(config.as_ref(), req.headers().get("Authorization")) {
-        return HttpResponse::Unauthorized()
-            .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
-            .finish();
+    if let Some(res) = handle_authorization(config.as_ref(), req.headers()).await {
+        return res;
     }
+
     match sqlx::query("DELETE FROM shortcut WHERE slug = $1 OR url = $1;")
         .bind(body.text.as_str())
         .execute(data.as_ref())
@@ -256,7 +253,7 @@ pub async fn health() -> impl Responder {
 }
 
 #[get("/assets/{file:.*}")]
-async fn assets(req: HttpRequest, path: Path<Assets>) -> HttpResponse {
+async fn assets(req: HttpRequest, path: Path<Assets>) -> impl Responder {
     match NamedFile::open(format!(
         "{}/assets/{}",
         env!("CARGO_MANIFEST_DIR"),
@@ -266,7 +263,7 @@ async fn assets(req: HttpRequest, path: Path<Assets>) -> HttpResponse {
             let mut res = file.into_response(&req);
             res.headers_mut().append(
                 header::CACHE_CONTROL,
-                header::HeaderValue::from_str("max-age=360")
+                header::HeaderValue::from_str("max-age=36000")
                     .expect("couldn't create cache header."),
             );
             res
@@ -276,4 +273,37 @@ async fn assets(req: HttpRequest, path: Path<Assets>) -> HttpResponse {
             HttpResponse::InternalServerError().finish()
         }
     }
+}
+
+#[get("/oauth2/code")]
+pub async fn code(config: Data<Configuration>, query: Query<Oauth2Code>) -> impl Responder {
+    if let Authentication::OAuth2 {
+        client_id,
+        client_secret,
+        token_url,
+        ..
+    } = &config.auth
+    {
+        let answer: serde_json::Value = reqwest::Client::new()
+            .post(format!(
+                "{token_url}?client_id={client_id}&client_secret={client_secret}&code={}",
+                query.code
+            ))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .expect("failed to get a response")
+            .json()
+            .await
+            .expect("failed to get a payload");
+
+        if let Some(Value::String(token)) = answer.get("access_token") {
+            return HttpResponse::Ok()
+            .insert_header(("Set-Cookie", format!("token={token}; Path=/; HttpOnly; Secure; SameSite=None")))
+            .insert_header(("Content-Type", "text/html"))
+            .body("<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url='/'\"></head><body></body></html>");
+        }
+    }
+
+    HttpResponse::InternalServerError().finish()
 }

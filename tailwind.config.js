@@ -5,6 +5,7 @@ module.exports = {
     extend: {
       colors: {
         star: {
+          lighter: '#f6eabd',
           DEFAULT: '#ffd700',
           dark: '#fdbb0b',
           darker: '#92400e'
@@ -18,8 +19,14 @@ module.exports = {
     },
     animation: {
       'slidein': 'slidein .3s',
+      'intro': 'intro 1s forwards',
     },
     keyframes: {
+      intro: {
+        '0%': { 'opacity': '0' },
+        '50%': { 'opacity': '0' },
+        '100%': { 'opacity': '1' },
+      },
       slidein: {
         '0%': { 'margin-top': '-10vh' },
         '100%': { 'margin-top': '10vh' },

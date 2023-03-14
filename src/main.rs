@@ -32,6 +32,7 @@ async fn main() -> std::io::Result<()> {
             .service(assets)
             .service(render)
             .service(dashboard)
+            .service(code)
             .wrap(Logger::default())
     })
     .bind(("0.0.0.0", 8080))

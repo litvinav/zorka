@@ -1,30 +1,53 @@
-use actix_web::http::header::HeaderValue;
+use actix_web::{http::header::HeaderMap, HttpResponse};
 use base64::{
     alphabet,
     engine::{general_purpose, Engine as _, GeneralPurpose},
 };
 use serde::Deserialize;
 
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 #[allow(non_camel_case_types)]
 pub enum AuthenticationOptions {
     none,
-    basic { username: String, password: String },
+    basic {
+        username: String,
+        password: String,
+    },
+    oauth2 {
+        client_id: String,
+        client_secret: String,
+        auth_url: String,
+        scope: String,
+        token_url: String,
+        introspect_url: String,
+        redirect_url: String,
+    },
 }
 
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Authentication {
     None,
-    Basic { header: String },
+    Basic {
+        header: String,
+    },
+    OAuth2 {
+        client_id: String,
+        client_secret: String,
+        scope: String,
+        auth_url: String,
+        token_url: String,
+        introspect_url: String,
+        redirect_url: String,
+    },
 }
 
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone, Default)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct Untrusted {
     pub label: String,
     pub button: String,
 }
 
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone, Default)]
+#[derive(Deserialize, Debug, Clone, Default)]
 pub struct Internationalization {
     pub lang: String,
     pub dir: String,
@@ -33,27 +56,74 @@ pub struct Internationalization {
     pub approval: Untrusted,
 }
 
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ConfigurationFile {
     #[serde(with = "serde_yaml::with::singleton_map")]
     pub auth: AuthenticationOptions,
     pub i18n: Internationalization,
 }
 
-#[derive(Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Configuration {
     pub auth: Authentication,
     pub i18n: Internationalization,
 }
 
-pub fn is_authorized(config: &Configuration, headervalue: Option<&HeaderValue>) -> bool {
+#[derive(Debug, Deserialize)]
+pub struct Oauth2Code {
+    pub code: String,
+}
+
+pub async fn handle_authorization(
+    config: &Configuration,
+    headermap: &HeaderMap,
+) -> Option<HttpResponse> {
     match &config.auth {
-        Authentication::None => true,
-        Authentication::Basic { header } => {
-            if let Some(val) = headervalue {
-                return header == val.to_str().unwrap_or_default();
+        Authentication::None => None,
+        Authentication::OAuth2 {
+            client_id,
+            scope,
+            auth_url,
+            redirect_url,
+            introspect_url,
+            ..
+        } => {
+            if let Some(value) = headermap.get("Cookie") {
+                let token = &value.to_str().unwrap().to_string()[6..];
+                if let Ok(response) = reqwest::Client::new()
+                    .get(introspect_url)
+                    .bearer_auth(token)
+                    .header("Accept", "application/vnd.github+json")
+                    .header("User-Agent", "")
+                    .send()
+                    .await
+                {
+                    if response.status().as_u16() < 300 {
+                        return None;
+                    }
+                }
             }
-            false
+
+            Some(
+                HttpResponse::SeeOther()
+                    .insert_header((
+                        "Location",
+                        format!("{auth_url}?client_id={client_id}&scope={scope}&&redirect_uri={redirect_url}"),
+                    ))
+                    .finish(),
+            )
+        }
+        Authentication::Basic { header } => {
+            if let Some(val) = headermap.get("Authorization") {
+                if header == val.to_str().unwrap_or_default() {
+                    return None;
+                }
+            }
+            Some(
+                HttpResponse::Unauthorized()
+                    .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
+                    .finish(),
+            )
         }
     }
 }
@@ -87,5 +157,25 @@ pub fn get_config() -> Configuration {
                 i18n: config.i18n,
             }
         }
+        AuthenticationOptions::oauth2 {
+            client_id,
+            client_secret,
+            scope,
+            auth_url,
+            token_url,
+            redirect_url,
+            introspect_url,
+        } => Configuration {
+            auth: Authentication::OAuth2 {
+                client_id,
+                client_secret,
+                scope,
+                auth_url,
+                token_url,
+                redirect_url,
+                introspect_url,
+            },
+            i18n: config.i18n,
+        },
     }
 }

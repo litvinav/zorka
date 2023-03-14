@@ -9,17 +9,19 @@
   <link rel="icon" href="data:,">
 </head>
 
-<body class="bg-white text-black dark:bg-black dark:text-white h-screen flex justify-center items-center">
+<body class="bg-white dark:bg-black h-screen flex justify-center items-center">
   <div class="px-4">
-    <div id="clock" class="text-center text-7xl pt-4 pb-16"
-      style="text-shadow: 0 4px 60px #3456ac, 0 0px 20px #8aa4e6;">&nbsp;</div>
-    <p>{{label}}</p>
+    <div id="clock"
+      class="text-center text-star-dark dark:text-star-lighter text-7xl pt-4 pb-16 star-glow animate-intro">
+      &nbsp;
+    </div>
+    <p class="text-black dark:text-white">{{label}}</p>
   </div>
 
   <script>
     const deadline = new Date({{timestamp}}).getTime()
     const clock = document.getElementById('clock')
-    const timeinterval = setInterval(() => {
+    function tick() {
       const total = deadline - Date.now()
       const seconds = Math.floor((total / 1000) % 60)
       const minutes = Math.floor((total / 1000 / 60) % 60)
@@ -28,12 +30,16 @@
         hours.toString().padStart(2, '0') + ':' +
         minutes.toString().padStart(2, '0') + ':' +
         seconds.toString().padStart(2, '0')
-      if (total <= 0) {
-        clearInterval(timeinterval)
-        clock.innerHTML = '00:00:00'
-        setTimeout(() => window.location = window.location, Math.random() * 3000)
-      }
-    }, 1000);
+      try {
+        if (total <= 0) {
+          clearInterval(timeinterval)
+          clock.innerHTML = '00:00:00'
+          setTimeout(() => window.location = window.location, Math.random() * 3000)
+        }
+      } catch (_) { }
+    }
+    tick()
+    const timeinterval = setInterval(tick, 1000);
   </script>
 </body>
 
