@@ -11,6 +11,10 @@
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg viewBox='0 0 16 16' fill='%23fff' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.207 4.793a1 1 0 0 1 0 1.414l-5 5a1 1 0 0 1-1.414 0l-2-2a1 1 0 0 1 1.414-1.414L6.5 9.086l4.293-4.293a1 1 0 0 1 1.414 0z'/%3E%3C/svg%3E");
 }
 
-.star-glow {
+.text-star-glow {
   text-shadow: 0 0 200px #f008, 0 0 100px #f809, 0 0px 15px #fe0b;
+}
+
+.shadow-star-glow {
+  box-shadow: 0 0 5px #f008, 0 0 10px #f809, 0 0px 20px #fe0b;
 }

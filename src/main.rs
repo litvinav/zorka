@@ -30,6 +30,7 @@ async fn main() -> std::io::Result<()> {
             .service(create)
             .service(delete)
             .service(assets)
+            .service(share)
             .service(render)
             .service(dashboard)
             .service(code)

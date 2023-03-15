@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{slug}} | Zorka</title>
+  <link href="/assets/style.css" rel="stylesheet">
+  <script async src="/assets/script.js"></script>
+  <link rel="icon" href="data:,">
+</head>
+
+<body class="bg-black min-h-screen flex justify-center items-center">
+  <section>
+    <img class="p-4 bg-offwhite rounded shadow-star-glow" src="data:image/svg+xml;base64,{{vector}}" alt="Link to {{slug}}">
+    <p class="text-center text-offwhite2 pb-2 pt-8">Download this QRCode</p>
+    <nav class="grid grid-cols-2 p-2 gap-x-2 text-black">
+      <a class="bg-offblack2 text-center text-white rounded p-2 focus:outline focus:outline-1 focus:outline-solid">Vector</a>
+      <a class="bg-offblack2 text-center text-white rounded p-2 focus:outline focus:outline-1 focus:outline-solid">Image</a>
+    </nav>
+  </section>
+  <script>
+    let img = document.querySelector('img')
+    let a = document.querySelectorAll('a')
+    if (a[0] instanceof HTMLAnchorElement && a[1] instanceof HTMLAnchorElement && img instanceof HTMLImageElement) {
+      a[0].href = img.src
+      a[0].download = "{{slug}}.svg"
+
+      const canvas = document.createElement("canvas")
+            context = canvas.getContext("2d");
+      canvas.setAttribute('width', 330);
+      canvas.setAttribute('height', 330);
+      context.drawImage(img, 0, 0);
+      a[1].href = canvas.toDataURL("image/png")
+      a[1].download = "{{slug}}.png"
+    }
+  </script>
+</body>
+
+</html>

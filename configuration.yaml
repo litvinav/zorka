@@ -7,3 +7,5 @@ i18n:
   approval:
     label: Are you sure you want to be redirected to the following URL?
     button: continue
+server:
+  public_origin: http://127.1:8080

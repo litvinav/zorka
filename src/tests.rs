@@ -3,7 +3,7 @@ mod testing {
     use std::{thread, time::Duration};
 
     use crate::{
-        configuration::{Configuration, Internationalization},
+        configuration::{Configuration, Internationalization, ServerInformation},
         database::setup_database,
         health,
         routes::*,
@@ -40,6 +40,7 @@ mod testing {
                 header: "Basic dXNlcm5hbWU6cGFzc3dvcmQ=".to_string(),
             },
             i18n: Internationalization::default(),
+            server: ServerInformation::default(),
         };
         let app = test::init_service(
             App::new()
@@ -77,6 +78,7 @@ mod testing {
         let config = Configuration {
             auth: crate::configuration::Authentication::None,
             i18n: Internationalization::default(),
+            server: ServerInformation::default()
         };
 
         // Put the URL into the database to be fetched

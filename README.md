@@ -7,12 +7,13 @@
 ## General
 
 ```sh
-GET     /        # web UI
-GET     /s/:slug # short url redirecting to the target
-GET     /s       # get current shortcuts in the csv format
-PUT     /s       # put route for new entries during runtime
-DELETE  /s       # deletes entries during runtime by slug or url
-GET     /health  # readiness and liveness health
+GET     /            # web UI
+GET     /share/:slug # share UI
+GET     /s/:slug     # short url redirecting to the target
+GET     /s           # get current shortcuts in the csv format
+PUT     /s           # put route for new entries during runtime
+DELETE  /s           # deletes entries during runtime by slug or url
+GET     /health      # readiness and liveness health
 ```
 
 You can scale this url shortener to your requirements via seeding, since its hosting the same url's on all instances.
@@ -22,11 +23,19 @@ As an alternative you can just manage the redirects via the web UI and backup th
 
 Of course, mixed usage is also possible. Notice the `/s` route that generates the shortcuts for your version in the csv format. This could be used to create a updated `./seed.csv` from one instance and redeploy all instances. This also allows fast redeploys if you are mounting the seed.csv via a ConfigMap in a Kubernetes environment.
 
+### Sharing
+
+As of v0.2.1 Zorka has a share feature. This allows you to generate a QR Code that will on scan browse to a corresponding shortcut at `/s/:slug`.
+
+This does not directly browse to your shortcut target, in order to make sure that the [Gates](#gated-routes) from the Protection section still apply.
+
 ### Privacy Policy
 
-Zorka does not store any of your or the customers data. On one side you can safely use Zorka without leaking any of your private information to other Comapnies. Also your customers wont be greeted with any anoying cookie or privacy banners.
+Zorka does store as little data as possible, since almost no data is needed to operate.
 
-Unless you protect the routes with [Gates](#gated-routes), your clients wont even know it is there.
+On one side you can safely use Zorka without leaking any of your private information to other companies. If you decide to protect the admin routes with OAuth2, the stored data for you is only the access token as a cookie.
+
+For client pages no data is stored from the client or any data to the clients browser. This means customers wont be greeted with any anoying cookie or privacy banners.
 
 ## Protection
 
@@ -85,7 +94,8 @@ The trust level can be currently set to 'trusted' and 'untrusted'. In case of un
 
 ### Configuration via configuration.yaml
 
->Option 3: Oauth2 Code Flow has only been tested with GitHub so far. Most OIDC flows are very similar but use it with caution. Expect other and improved Oauth2 Flows in the future when they are ready.
+>Option 3: You get most of the options from the well-known page a of OAuth2 service. For e.g. Google: https://accounts.google.com/.well-known/openid-configuration
+>Also there is no "stay logged in" functionality. Refresh tokens are ignored and access tokens are cleaned up on browser close. Either the introspection verifies you or the access to admin pages is blocked.
 
 ```yaml
 auth: # Pick one option
@@ -95,11 +105,11 @@ auth: # Pick one option
   basic:
     username: username
     password: password
-  # Option 3: SSO via Oauth2 Code Flow
+  # Option 3: SSO via OAuth2 Code Flow
   oauth2:
     client_id: d675f5571ab33e44bb32
     client_secret: fb27917c2d78f59ef49f38e6454dad675f55718s
-    scopes: user offline
+    scope: user
     auth_url: https://github.com/login/oauth/authorize
     token_url: https://github.com/login/oauth/access_token
     introspect_url: https://api.github.com/user
@@ -112,6 +122,8 @@ i18n:
   approval:
     label: Are you sure you want to be redirected to the following URL?
     button: to the stars 🚀
+server:
+  public_origin: http://127.1:8080
 ```
 
 ### Deployment via compose.yaml
@@ -137,11 +149,11 @@ This will help you to hide the the auth values in the case you are protecting th
 
 ### Preview
 
-#### Admin dashboard
+#### Internal pages
 
-| Dashboard Desktop                 | Dashboard Mobile                |
-| --------------------------------- | ------------------------------- |
-| ![desktop](/docs/img/desktop.png) | ![mobile](/docs/img/mobile.png) |
+| Dashboard Desktop                 | Dashboard Mobile                | Sharing                           |
+| --------------------------------- | ------------------------------- | --------------------------------- |
+| ![desktop](/docs/img/desktop.png) | ![mobile](/docs/img/mobile.png) | ![sharing](/docs/img/sharing.png) |
 
 #### Client pages variants
 

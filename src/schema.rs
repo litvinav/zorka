@@ -73,3 +73,9 @@ pub struct Countdown {
     pub dir: String,
     pub label: String,
 }
+
+#[derive(Serialize)]
+pub struct Share {
+    pub slug: String,
+    pub vector: String,
+}

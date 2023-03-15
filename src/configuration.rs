@@ -5,7 +5,7 @@ use base64::{
 };
 use serde::Deserialize;
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Clone)]
 #[allow(non_camel_case_types)]
 pub enum AuthenticationOptions {
     none,
@@ -24,7 +24,7 @@ pub enum AuthenticationOptions {
     },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum Authentication {
     None,
     Basic {
@@ -41,13 +41,13 @@ pub enum Authentication {
     },
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Deserialize, Clone, Default)]
 pub struct Untrusted {
     pub label: String,
     pub button: String,
 }
 
-#[derive(Deserialize, Debug, Clone, Default)]
+#[derive(Deserialize, Clone, Default)]
 pub struct Internationalization {
     pub lang: String,
     pub dir: String,
@@ -56,20 +56,27 @@ pub struct Internationalization {
     pub approval: Untrusted,
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Clone, Default)]
+pub struct ServerInformation {
+    pub public_origin: String,
+}
+
+#[derive(Deserialize, Clone)]
 pub struct ConfigurationFile {
     #[serde(with = "serde_yaml::with::singleton_map")]
     pub auth: AuthenticationOptions,
     pub i18n: Internationalization,
+    pub server: ServerInformation,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Configuration {
     pub auth: Authentication,
     pub i18n: Internationalization,
+    pub server: ServerInformation,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct Oauth2Code {
     pub code: String,
 }
@@ -108,7 +115,7 @@ pub async fn handle_authorization(
                 HttpResponse::SeeOther()
                     .insert_header((
                         "Location",
-                        format!("{auth_url}?client_id={client_id}&scope={scope}&&redirect_uri={redirect_url}"),
+                        format!("{auth_url}?client_id={client_id}&scope={scope}&response_type=code&redirect_uri={redirect_url}"),
                     ))
                     .finish(),
             )
@@ -143,6 +150,7 @@ pub fn get_config() -> Configuration {
         AuthenticationOptions::none => Configuration {
             auth: Authentication::None,
             i18n: config.i18n,
+            server: config.server,
         },
         AuthenticationOptions::basic { username, password } => {
             // Prerender Basic Auth header and just compare at runtime
@@ -155,6 +163,7 @@ pub fn get_config() -> Configuration {
                     header: format!("Basic {b64}"),
                 },
                 i18n: config.i18n,
+                server: config.server,
             }
         }
         AuthenticationOptions::oauth2 {
@@ -176,6 +185,7 @@ pub fn get_config() -> Configuration {
                 introspect_url,
             },
             i18n: config.i18n,
+            server: config.server,
         },
     }
 }

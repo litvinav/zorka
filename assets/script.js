@@ -24,7 +24,7 @@ function remove(slug) {
     })
   }
 }
-function edit(event, slug) {
+function edit(event) {
   if (event.isTrusted && event.target == event.currentTarget) {
     event.target.blur()
     const date = event.target.parentElement.previousElementSibling
@@ -91,7 +91,6 @@ function hide(event) {
     form.classList.add('hidden')
   }
 }
-
 
 const svgs = {
   reachable: '',

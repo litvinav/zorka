@@ -7,6 +7,11 @@ use actix_web::{
     web::{Data, Json, Path, Query},
     HttpRequest, HttpResponse, Responder,
 };
+use base64::{
+    alphabet,
+    engine::{general_purpose, Engine as _, GeneralPurpose},
+};
+use qrcode::{render::svg, EcLevel, QrCode, Version};
 use regex::Regex;
 use serde_json::Value;
 use sqlx::{Pool, Row, Sqlite};
@@ -177,6 +182,42 @@ pub async fn find(
     }
 }
 
+#[get("/share/{slug}")]
+pub async fn share(
+    path: Path<GetShortcut>,
+    config: Data<Configuration>,
+    tera: Data<Tera>,
+    req: HttpRequest,
+) -> impl Responder {
+    if let Some(res) = handle_authorization(config.as_ref(), req.headers()).await {
+        return res;
+    }
+
+    let url = format!("{}/s/{}", config.server.public_origin, path.slug);
+    let qrcode = QrCode::with_version(url.as_bytes(), Version::Normal(4), EcLevel::L).unwrap();
+    let vector = qrcode
+        .render()
+        .quiet_zone(false)
+        .dark_color(svg::Color("#000000"))
+        .light_color(svg::Color("transparent"))
+        .min_dimensions(300, 300)
+        .build();
+    const ENGINE: GeneralPurpose = GeneralPurpose::new(&alphabet::STANDARD, general_purpose::NO_PAD);
+
+    match tera.render(
+        "share.html",
+        &Context::from_serialize(Share {
+            slug: path.slug.to_string(),
+            vector: ENGINE.encode(vector)
+        }).unwrap(),
+    ) {
+        Ok(html) => HttpResponse::Ok()
+            .insert_header(header::ContentType::html())
+            .body(html),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
 #[put("/s")]
 pub async fn create(
     data: Data<Pool<Sqlite>>,
@@ -249,7 +290,7 @@ pub async fn delete(
 
 #[get("/health")]
 pub async fn health() -> impl Responder {
-    HttpResponse::Ok()
+    HttpResponse::Ok().finish()
 }
 
 #[get("/assets/{file:.*}")]
@@ -263,7 +304,7 @@ async fn assets(req: HttpRequest, path: Path<Assets>) -> impl Responder {
             let mut res = file.into_response(&req);
             res.headers_mut().append(
                 header::CACHE_CONTROL,
-                header::HeaderValue::from_str("max-age=36000")
+                header::HeaderValue::from_str("max-age=604800")
                     .expect("couldn't create cache header."),
             );
             res
@@ -281,14 +322,16 @@ pub async fn code(config: Data<Configuration>, query: Query<Oauth2Code>) -> impl
         client_id,
         client_secret,
         token_url,
+        redirect_url,
         ..
     } = &config.auth
     {
         let answer: serde_json::Value = reqwest::Client::new()
             .post(format!(
-                "{token_url}?client_id={client_id}&client_secret={client_secret}&code={}",
+                "{token_url}?grant_type=authorization_code&client_id={client_id}&redirect_uri={redirect_url}&client_secret={client_secret}&code={}",
                 query.code
             ))
+            .header("Content-Length", "0")
             .header("Accept", "application/json")
             .send()
             .await
