@@ -39,10 +39,10 @@
                 </path>
               </svg>
             </button>
-            {{ item.slug }}
+            <span>{{ item.slug }}</span>
           </td>
           <td class="px-4 py-2 border border-offblack2 truncate hidden md:table-cell">{{ item.url }}</td>
-          <td class="px-4 py-2 border border-offblack2 truncate" data-since="{{item.since}}"
+          <td class="px-4 py-2 border border-offblack2 truncate" data-trust="{{item.status}}" data-since="{{item.since}}"
             data-until="{{item.until}}">
             {% if item.now < item.since %}
             <svg fill="#ffd700" class="inline-block" fill="currentColor" focusable="false" aria-hidden="true"
@@ -91,7 +91,7 @@
           name="url">
       </div>
       <div>
-        <label class="block text-sm text-zinc-400">Available from</label>
+        <label class="block text-sm text-zinc-400">Available from (optional)</label>
         <div class="grid md:grid-cols-2 gap-4">
           <input class="bg-black text-center px-4 py-2 w-full focus:outline focus:outline-1 focus:outline-solid"
             type="date" name="fromdate">
@@ -100,7 +100,7 @@
         </div>
       </div>
       <div>
-        <label class="block text-sm text-zinc-400">Not available after</label>
+        <label class="block text-sm text-zinc-400">Not available after (optional)</label>
         <div class="grid md:grid-cols-2 gap-4">
           <input class="bg-black text-center px-4 py-2 w-full focus:outline focus:outline-1 focus:outline-solid"
             type="date" name="todate">
