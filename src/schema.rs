@@ -1,11 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
-pub struct Assets {
-    pub file: String,
-}
-
-#[derive(Deserialize)]
 pub struct GetShortcut {
     pub slug: String,
 }
@@ -24,12 +19,7 @@ pub struct PutShortcutAnwser {
 }
 #[derive(Debug, Deserialize)]
 pub struct DeleteShortcut {
-    pub text: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DeleteShortcutAnwser {
-    pub rows_affected: u64,
+    pub slug: String,
 }
 
 // DASHBOARD CONTEXT
@@ -78,4 +68,15 @@ pub struct Countdown {
 pub struct Share {
     pub slug: String,
     pub vector: String,
+}
+
+// DATA
+
+#[derive(Clone)]
+pub struct ShortcutEntry {
+    pub slug: String,
+    pub url: String,
+    pub status: String,
+    pub since: String,
+    pub until: String,
 }

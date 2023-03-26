@@ -9,7 +9,7 @@ function remove(slug) {
   if (typeof slug == 'string') {
     fetch(`${window.location.origin}/s`, {
       method: "DELETE",
-      body: JSON.stringify({ "text": slug }),
+      body: JSON.stringify({ "slug": slug }),
       headers: { "Content-Type": "application/json" }
     }).then(res => {
       if (res.status < 300) {

@@ -1,5 +1,4 @@
-use crate::{configuration::*, schema::*};
-use actix_files::NamedFile;
+use crate::{configuration::*, database::Database, schema::*};
 use actix_web::{
     delete, get,
     http::header,
@@ -14,13 +13,12 @@ use base64::{
 use qrcode::{render::svg, EcLevel, QrCode, Version};
 use regex::Regex;
 use serde_json::Value;
-use sqlx::{Pool, Row, Sqlite};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tera::{Context, Tera};
 
 #[get("/")]
 pub async fn dashboard(
-    data: Data<Pool<Sqlite>>,
+    data: Data<Database>,
     tera: Data<Tera>,
     config: Data<Configuration>,
     req: HttpRequest,
@@ -29,48 +27,35 @@ pub async fn dashboard(
         return res;
     }
 
-    match sqlx::query("SELECT slug,url,since,until,status FROM shortcut ORDER BY slug;")
-        .fetch_all(data.as_ref())
-        .await
-    {
-        Ok(result) => {
-            let items: Vec<ShortcutItem> = result
-                .iter()
-                .map(|item| ShortcutItem {
-                    slug: item.get("slug"),
-                    url: item.get("url"),
-                    status: item.get("status"),
-                    now: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("time went backwards")
-                        .as_millis(),
-                    since: item
-                        .get::<String, &str>("since")
-                        .parse()
-                        .expect("not valid UNIX time."),
-                    until: item
-                        .get::<String, &str>("until")
-                        .parse()
-                        .expect("not valid UNIX time."),
-                })
-                .collect();
-            match tera.render(
-                "dashboard.html",
-                &Context::from_serialize(ShortcutList { items }).expect(""),
-            ) {
-                Ok(html) => HttpResponse::Ok()
-                    .insert_header(header::ContentType::html())
-                    .body(html),
-                Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-            }
-        }
-        Err(e) => HttpResponse::NotFound().body(e.to_string()),
+    let items = data
+        .read_all()
+        .iter()
+        .map(|item| ShortcutItem {
+            slug: item.slug.clone(),
+            url: item.url.clone(),
+            status: item.status.clone(),
+            now: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_millis(),
+            since: item.since.parse().expect("not valid UNIX time."),
+            until: item.until.parse().expect("not valid UNIX time."),
+        })
+        .collect();
+    match tera.render(
+        "dashboard.html",
+        &Context::from_serialize(ShortcutList { items }).expect(""),
+    ) {
+        Ok(html) => HttpResponse::Ok()
+            .insert_header(header::ContentType::html())
+            .body(html),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
 
 #[get("/s")]
 pub async fn render(
-    data: Data<Pool<Sqlite>>,
+    data: Data<Database>,
     config: Data<Configuration>,
     req: HttpRequest,
 ) -> impl Responder {
@@ -78,24 +63,17 @@ pub async fn render(
         return res;
     }
 
-    let csv = match sqlx::query("SELECT slug,url,status,since,until FROM shortcut;")
-        .fetch_all(data.as_ref())
-        .await
-    {
-        Ok(result) => result
-            .iter()
-            .map(|row| {
-                let slug: String = row.get("slug");
-                let url: String = row.get("url");
-                let status: String = row.get("status");
-                let since: String = row.get("since");
-                let until: String = row.get("until");
-                format!("{slug},{url},{status},{since},{until}")
-            })
-            .collect::<Vec<String>>()
-            .join("\n"),
-        Err(_) => String::default(),
-    };
+    let csv = data
+        .read_all()
+        .iter()
+        .map(|row| {
+            format!(
+                "{},{},{},{},{}",
+                row.slug, row.url, row.status, row.since, row.until,
+            )
+        })
+        .collect::<Vec<String>>()
+        .join("\n");
     HttpResponse::Ok()
         .append_header(("Content-Type", "text/csv; charset utf-8"))
         .append_header(("Content-Disposition", "attachment; filename=\"seed.csv\""))
@@ -104,36 +82,25 @@ pub async fn render(
 
 #[get("/s/{slug}")]
 pub async fn find(
-    data: Data<Pool<Sqlite>>,
+    data: Data<Database>,
     tera: Data<Tera>,
     config: Data<Configuration>,
     path: Path<GetShortcut>,
 ) -> impl Responder {
-    match sqlx::query("SELECT url,since,until,status FROM shortcut WHERE slug = ?;")
-        .bind(path.slug.as_str())
-        .fetch_one(data.as_ref())
-        .await
-    {
-        Ok(result) => {
-            let url: String = result.get("url");
-            let status: String = result.get("status");
-            let available_since: u128 = result
-                .get::<String, &str>("since")
-                .parse()
-                .expect("not valid UNIX time.");
-            let available_until: u128 = result
-                .get::<String, &str>("until")
-                .parse()
-                .expect("not valid UNIX time.");
+    match data.read(&path.slug) {
+        Some(result) => {
+            let available_since: u128 = result.since.parse().expect("not valid UNIX time.");
+            let available_until: u128 = result.until.parse().expect("not valid UNIX time.");
             let now: u128 = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("time went backwards")
                 .as_millis();
 
             if now >= available_since && now <= available_until {
-                if status == "untrusted" {
+                // Approval confirm url
+                if result.status == "untrusted" {
                     let ctx = Context::from_serialize(Approval {
-                        url,
+                        url: result.url,
                         dir: config.i18n.dir.clone(),
                         lang: config.i18n.lang.clone(),
                         label: config.i18n.approval.label.clone(),
@@ -145,12 +112,15 @@ pub async fn find(
                             .insert_header(header::ContentType::html())
                             .body(html);
                     }
-                } else {
+                }
+                // Redirect
+                else {
                     return HttpResponse::SeeOther()
-                        .append_header(("Location", url))
+                        .append_header(("Location", result.url))
                         .finish();
                 }
             } else if now < available_since {
+                // Countdown
                 let ctx = Context::from_serialize(Countdown {
                     timestamp: available_since,
                     dir: config.i18n.dir.clone(),
@@ -164,6 +134,7 @@ pub async fn find(
                         .body(html);
                 };
             } else {
+                // Block outdated
                 let ctx = Context::from_serialize(Blocker {
                     dir: config.i18n.dir.clone(),
                     lang: config.i18n.lang.clone(),
@@ -176,9 +147,10 @@ pub async fn find(
                         .body(html);
                 }
             }
+            // Unreachable 500
             HttpResponse::InternalServerError().finish()
         }
-        Err(_) => HttpResponse::NotFound().finish(),
+        None => HttpResponse::NotFound().finish(),
     }
 }
 
@@ -202,14 +174,16 @@ pub async fn share(
         .light_color(svg::Color("transparent"))
         .min_dimensions(300, 300)
         .build();
-    const ENGINE: GeneralPurpose = GeneralPurpose::new(&alphabet::STANDARD, general_purpose::NO_PAD);
+    const ENGINE: GeneralPurpose =
+        GeneralPurpose::new(&alphabet::STANDARD, general_purpose::NO_PAD);
 
     match tera.render(
         "share.html",
         &Context::from_serialize(Share {
             slug: path.slug.to_string(),
-            vector: ENGINE.encode(vector)
-        }).unwrap(),
+            vector: ENGINE.encode(vector),
+        })
+        .unwrap(),
     ) {
         Ok(html) => HttpResponse::Ok()
             .insert_header(header::ContentType::html())
@@ -220,7 +194,7 @@ pub async fn share(
 
 #[put("/s")]
 pub async fn create(
-    data: Data<Pool<Sqlite>>,
+    data: Data<Database>,
     body: Json<PutShortcut>,
     config: Data<Configuration>,
     req: HttpRequest,
@@ -242,29 +216,32 @@ pub async fn create(
     }
 
     // Insert
-    match sqlx::query(
-        "INSERT OR REPLACE INTO shortcut(slug,url,status,since,until) VALUES($1,$2,$3,$4,$5) RETURNING slug;",
-    )
-    .bind(body.slug.as_str())
-    .bind(body.url.as_str())
-    .bind(if body.approval {"untrusted"} else {"trusted"})
-    .bind(body.since.to_string())
-    .bind(body.until.to_string())
-    .fetch_one(data.as_ref())
-    .await
-    {
-        Ok(response) => {
-            let slug: String = response.get("slug");
-            log::debug!("Put a new slug '{}'.", &slug);
-            HttpResponse::Created().json(PutShortcutAnwser { slug })
-        }
-        Err(_) => HttpResponse::InternalServerError().finish(),
+    let status = if body.approval {
+        "untrusted"
+    } else {
+        "trusted"
+    };
+    let entry = ShortcutEntry {
+        slug: body.slug.clone(),
+        url: body.url.clone(),
+        status: status.to_string(),
+        since: body.since.to_string(),
+        until: body.until.to_string(),
+    };
+
+    if data.upsert(body.slug.clone(), entry) {
+        log::debug!("Put a new slug '{}'.", &body.slug);
+        HttpResponse::Created().json(PutShortcutAnwser {
+            slug: body.slug.clone(),
+        })
+    } else {
+        HttpResponse::InternalServerError().body("Please retry again in a few seconds.")
     }
 }
 
 #[delete("/s")]
 pub async fn delete(
-    data: Data<Pool<Sqlite>>,
+    data: Data<Database>,
     body: Json<DeleteShortcut>,
     config: Data<Configuration>,
     req: HttpRequest,
@@ -273,47 +250,16 @@ pub async fn delete(
         return res;
     }
 
-    match sqlx::query("DELETE FROM shortcut WHERE slug = $1 OR url = $1;")
-        .bind(body.text.as_str())
-        .execute(data.as_ref())
-        .await
-    {
-        Ok(response) => {
-            log::debug!("Deleted {} entries.", response.rows_affected());
-            HttpResponse::Ok().json(DeleteShortcutAnwser {
-                rows_affected: response.rows_affected(),
-            })
-        }
-        Err(_) => HttpResponse::InternalServerError().finish(),
+    if data.delete(&body.slug) {
+        HttpResponse::Ok().finish()
+    } else {
+        HttpResponse::InternalServerError().body("Please retry again in a few seconds.")
     }
 }
 
 #[get("/health")]
 pub async fn health() -> impl Responder {
     HttpResponse::Ok().finish()
-}
-
-#[get("/assets/{file:.*}")]
-async fn assets(req: HttpRequest, path: Path<Assets>) -> impl Responder {
-    match NamedFile::open(format!(
-        "{}/assets/{}",
-        env!("CARGO_MANIFEST_DIR"),
-        path.file
-    )) {
-        Ok(file) => {
-            let mut res = file.into_response(&req);
-            res.headers_mut().append(
-                header::CACHE_CONTROL,
-                header::HeaderValue::from_str("max-age=604800")
-                    .expect("couldn't create cache header."),
-            );
-            res
-        }
-        Err(err) => {
-            println!("Error opening {}: {}", path.file, err);
-            HttpResponse::InternalServerError().finish()
-        }
-    }
 }
 
 #[get("/oauth2/code")]

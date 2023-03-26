@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod testing {
-    use std::{thread, time::Duration};
+    use std::collections::HashMap;
 
     use crate::{
         configuration::{Configuration, Internationalization, ServerInformation},
-        database::setup_database,
+        database::Database,
         health,
         routes::*,
-        schema::{DeleteShortcutAnwser, PutShortcutAnwser},
+        schema::PutShortcutAnwser,
     };
     use actix_web::{
         http::{
@@ -19,7 +19,6 @@ mod testing {
         App,
     };
     use serde_json::json;
-    use sqlx::{Pool, Sqlite};
 
     #[actix_web::test]
     async fn healthcheck() {
@@ -31,8 +30,7 @@ mod testing {
 
     #[actix_web::test]
     async fn admin_dashboard() {
-        let test_database_path = "/tmp/admin_dashboard.db";
-        let pool: Pool<Sqlite> = setup_database(format!("sqlite://{}", test_database_path)).await;
+        let data = Database::new(HashMap::new());
         let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
         // Setup with Basic Authorization protection
         let config = Configuration {
@@ -45,7 +43,7 @@ mod testing {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(config.clone()))
-                .app_data(Data::new(pool.clone()))
+                .app_data(Data::new(data.clone()))
                 .app_data(Data::new(tera.clone()))
                 .service(dashboard),
         )
@@ -64,17 +62,13 @@ mod testing {
             resp.headers().get(header::CONTENT_TYPE).unwrap(),
             "text/html; charset=utf-8"
         );
-
-        // Cleanup the testing database
-        std::fs::remove_file(test_database_path).expect("Testing database could not be deleted");
     }
 
     #[actix_web::test]
     async fn url_shortening() {
         let initial_target_uri = "https://github.com";
-        let test_database_path = "/tmp/url_shortening.db";
-        let pool: Pool<Sqlite> = setup_database(format!("sqlite://{}", test_database_path)).await;
-        let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
+        let tera = tera::Tera::new("./templates/**/*").unwrap();
+        let data = Database::new(HashMap::new());
         let config = Configuration {
             auth: crate::configuration::Authentication::None,
             i18n: Internationalization::default(),
@@ -85,13 +79,14 @@ mod testing {
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(config.clone()))
-                .app_data(Data::new(pool.clone()))
+                .app_data(Data::new(data.clone()))
                 .app_data(Data::new(tera.clone()))
                 .service(create)
                 .service(find)
                 .service(delete),
         )
         .await;
+
         let interaction = TestRequest::put()
             .uri("/s")
             .set_json(json!({
@@ -113,8 +108,8 @@ mod testing {
             "application/json"
         );
 
-        // May return 404 in GET immediately after PUT during DB write
-        thread::sleep(Duration::from_secs(1));
+        // // May return 404 in GET immediately after PUT during DB write
+        // thread::sleep(Duration::from_secs(1));
 
         // Get redirection with the newly created slug
         let anwser: PutShortcutAnwser = test::read_body_json(interaction).await;
@@ -135,14 +130,9 @@ mod testing {
         // Delete test entry
         let interaction = TestRequest::delete()
             .uri("/s")
-            .set_json(json!({ "text": initial_target_uri }))
+            .set_json(json!({ "slug": anwser.slug }))
             .send_request(&app)
             .await;
         assert_eq!(interaction.response().status(), StatusCode::OK);
-        let anwser: DeleteShortcutAnwser = test::read_body_json(interaction).await;
-        assert_eq!(anwser.rows_affected, 1);
-
-        // Cleanup the testing database
-        std::fs::remove_file(test_database_path).expect("Testing database could not be deleted");
     }
 }

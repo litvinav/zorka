@@ -2,7 +2,7 @@
 <img src="./docs/img/logo.jpeg" alt="logo" width="240"/>
 </p>
 
-⭐ Zorka (Cyrillic: зорка, [ˈzorkə], star in Belarusian) is a fast, self contained and minimalistic url shortener, using [SQLite](https://www.sqlite.org/) to store and [Actix](https://actix.rs/) to host the redirects.
+⭐ Zorka (Cyrillic: зорка, [ˈzorkə], star in Belarusian) is a fast, self contained and minimalistic url shortener, using [Actix](https://actix.rs/) to store and host the redirects.
 
 ## General
 
@@ -12,16 +12,14 @@ GET     /share/:slug # share UI
 GET     /s/:slug     # short url redirecting to the target
 GET     /s           # get current shortcuts in the csv format
 PUT     /s           # put route for new entries during runtime
-DELETE  /s           # deletes entries during runtime by slug or url
+DELETE  /s           # deletes entries during runtime by slug
 GET     /health      # readiness and liveness health
 ```
 
 You can scale this url shortener to your requirements via seeding, since its hosting the same url's on all instances.
 Seeding on launch from a `./seed.csv` is seen in the example section.
 
-As an alternative you can just manage the redirects via the web UI and backup the sqlite.db file.
-
-Of course, mixed usage is also possible. Notice the `/s` route that generates the shortcuts for your version in the csv format. This could be used to create a updated `./seed.csv` from one instance and redeploy all instances. This also allows fast redeploys if you are mounting the seed.csv via a ConfigMap in a Kubernetes environment.
+Notice the `/s` route that generates the shortcuts for your version in the csv format. This could be used to create a updated `./seed.csv` from one instance and redeploy all instances. This also allows fast redeploys if you are mounting the seed.csv via a ConfigMap in a Kubernetes environment.
 
 ### Sharing
 

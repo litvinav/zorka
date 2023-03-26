@@ -1,34 +1,21 @@
+use crate::schema::ShortcutEntry;
 use regex::Regex;
-use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePoolOptions, Pool, Sqlite};
+use std::sync::RwLock;
+use std::{collections::HashMap, sync::Arc};
 use std::{
     fs,
     io::{BufRead, BufReader},
 };
 
-async fn migrate(pool: &Pool<Sqlite>) {
-    let qry = "CREATE TABLE IF NOT EXISTS shortcut (
-        slug    TEXT    PRIMARY KEY     NOT NULL,
-        url     TEXT                    NOT NULL,
-        status  TEXT                    NOT NULL,
-        since   TEXT                    NOT NULL,
-        until   TEXT                    NOT NULL
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS indx_slug ON shortcut (slug);";
-    if let Err(e) = sqlx::query(qry).execute(pool).await {
-        log::error!("{}", e.to_string());
-    }
-}
-
-async fn seed(pool: &Pool<Sqlite>) {
-    match fs::File::open(concat!(env!("CARGO_MANIFEST_DIR"), "/seed.csv")) {
+fn seeded() -> HashMap<String, ShortcutEntry> {
+    let mut data: HashMap<String, ShortcutEntry> = HashMap::new();
+    match fs::File::open("./seed.csv") {
         Ok(file) => {
             let buf = BufReader::new(file);
             let regex =
                 Regex::new(
                     r"^(?P<slug>[a-z0-9]+),(?P<url>https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)),(?P<status>((un)?trusted)),(?P<since>\d+),(?P<until>\d+)$"
                 ).expect("invalid regex");
-
-            let mut data: Vec<String> = vec![];
             for content in buf.lines().flatten() {
                 if let Some(capture) = regex.captures(&content) {
                     if let (Some(slug), Some(url), Some(status), Some(since), Some(until)) = (
@@ -38,39 +25,76 @@ async fn seed(pool: &Pool<Sqlite>) {
                         capture.name("since"),
                         capture.name("until"),
                     ) {
-                        data.push(format!(
-                            "('{}','{}','{}','{}','{}')",
-                            slug.as_str(),
-                            url.as_str(),
-                            status.as_str(),
-                            since.as_str(),
-                            until.as_str()
-                        ));
+                        data.insert(
+                            slug.as_str().to_string(),
+                            ShortcutEntry {
+                                slug: slug.as_str().to_string(),
+                                url: url.as_str().to_string(),
+                                status: status.as_str().to_string(),
+                                since: since.as_str().to_string(),
+                                until: until.as_str().to_string(),
+                            },
+                        );
                     }
                 }
-            }
-            let qry = format!("INSERT OR REPLACE INTO shortcut VALUES {};", data.join(","));
-            match sqlx::query(&qry).execute(pool).await {
-                Ok(result) => log::debug!("Imported {} items.", result.rows_affected()),
-                Err(e) => log::error!("{}", e.to_string()),
             }
         }
         Err(_) => log::debug!("Skipping seeding since no seed.csv was found."),
     }
+    data
 }
 
-pub async fn setup_database(db_filename: String) -> Pool<Sqlite> {
-    if !Sqlite::database_exists(&db_filename).await.unwrap_or(false) {
-        Sqlite::create_database(&db_filename)
-            .await
-            .expect("New database could not be created from the provided connection string.");
-    }
-    let pool = SqlitePoolOptions::new()
-        .connect(&db_filename)
-        .await
-        .expect("Could not connect to the database.");
-    migrate(&pool).await;
-    seed(&pool).await;
+#[derive(Clone)]
+pub struct Database {
+    data: Arc<RwLock<HashMap<String, ShortcutEntry>>>,
+}
 
-    pool
+impl Database {
+    pub fn new(data: HashMap<String, ShortcutEntry>) -> Self {
+        Self {
+            data: Arc::new(RwLock::new(data)),
+        }
+    }
+    pub fn read(&self, slug: &String) -> Option<ShortcutEntry> {
+        if let Ok(data) = self.data.read() {
+            data.get(slug).map(|entry| ShortcutEntry {
+                slug: entry.slug.clone(),
+                url: entry.url.clone(),
+                status: entry.status.clone(),
+                since: entry.since.clone(),
+                until: entry.until.clone(),
+            })
+        } else {
+            None
+        }
+    }
+    pub fn read_all(&self) -> Vec<ShortcutEntry> {
+        let mut all: Vec<ShortcutEntry> = vec![];
+        if let Ok(data) = self.data.read() {
+            for (_, entry) in data.iter() {
+                all.push(entry.clone())
+            }
+        }
+        all
+    }
+    pub fn upsert(&self, slug: String, value: ShortcutEntry) -> bool {
+        if let Ok(mut locked) = self.data.write() {
+            locked.insert(slug, value);
+            true
+        } else {
+            false
+        }
+    }
+    pub fn delete(&self, slug: &String) -> bool {
+        if let Ok(mut locked) = self.data.write() {
+            locked.remove(slug).is_some()
+        } else {
+            false
+        }
+    }
+}
+
+pub fn setup() -> Database {
+    let data = seeded();
+    Database::new(data)
 }
