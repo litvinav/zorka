@@ -1,16 +1,24 @@
-FROM rust:1.68-alpine3.17
-WORKDIR /app
+# - - - # - - - 🏗️ - - - # - - - #
+FROM rust:1.68-alpine3.17 as builder
+WORKDIR /app/
 
-COPY ./configuration.yaml ./Cargo.* ./
-COPY ./src ./src
-COPY ./assets ./assets
-COPY ./templates ./templates
+COPY ./Cargo.*  ./
+COPY ./src      ./src
 
-RUN apk --update add build-base libressl-dev \
- && cargo build --release \
- && rm -rf src
+RUN apk --update add build-base \
+ && cargo build --release
 
-ENV DATABASE_URL="./sqlite.db"
+# - - - # - - - 🐋 - - - # - - - #
+FROM alpine:3.17 as runtime
+WORKDIR /app/
+
 ENV RUST_LOG="zorka=error"
 
-ENTRYPOINT ["/app/target/release/zorka"]
+COPY ./assets             ./assets
+COPY ./templates          ./templates
+COPY ./configuration.yaml ./configuration.yaml
+COPY --from=builder       /app/target/release/zorka /app/zorka
+
+RUN apk add curl --no-cache
+EXPOSE 8080
+ENTRYPOINT ["/app/zorka"]

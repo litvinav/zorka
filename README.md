@@ -33,7 +33,7 @@ Zorka does store as little data as possible, since almost no data is needed to o
 
 On one side you can safely use Zorka without leaking any of your private information to other companies. If you decide to protect the admin routes with OAuth2, the stored data for you is only the access token as a cookie.
 
-For client pages no data is stored from the client or any data to the clients browser. This means customers wont be greeted with any anoying cookie or privacy banners.
+For client pages no data is stored from the client or any data to the clients browser. This means customers wont be greeted with any annoying cookie or privacy banners.
 
 ## Protection
 
@@ -131,18 +131,28 @@ services:
     image: litvinav/zorka:latest
     environment:
       RUST_LOG: "zorka=info"
-      # remove or set to not "true" to keep config
-      DELETE_CONFIG: "true"
     ports:
     - 8080:8080
     volumes:
     - ./seed.csv:/app/seed.csv:ro
-    # config will be deleted on launch because of DELETE_CONFIG
     - ./configuration.yaml:/app/configuration.yaml
+    deploy:
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 30M
+        reservations:
+          cpus: '0.1'
+          memory: 20M
 ```
 If you are feeling paranoid or cannot use a amd64 image, you can always build Zorka from source and store the image in your registry.
-The configuration file will be deleted on launch if DELETE_CONFIG is set to "true".
 
+The configuration file will be deleted on launch if DELETE_CONFIG environment variable is set to "true".
 This will help you to hide the the auth values in the case you are protecting the shortcut manipulation routes BUT for example 'restart: always' in docker will fail, due to a missing file.
 
 ### Preview

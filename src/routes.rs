@@ -1,4 +1,8 @@
-use crate::{configuration::*, database::Database, schema::*};
+use crate::{
+    configuration::*,
+    database::{Database, ShortcutEntry},
+    schema::*,
+};
 use actix_web::{
     delete, get,
     http::header,
@@ -13,7 +17,10 @@ use base64::{
 use qrcode::{render::svg, EcLevel, QrCode, Version};
 use regex::Regex;
 use serde_json::Value;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    process::Command,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tera::{Context, Tera};
 
 #[get("/")]
@@ -272,25 +279,27 @@ pub async fn code(config: Data<Configuration>, query: Query<Oauth2Code>) -> impl
         ..
     } = &config.auth
     {
-        let answer: serde_json::Value = reqwest::Client::new()
-            .post(format!(
-                "{token_url}?grant_type=authorization_code&client_id={client_id}&redirect_uri={redirect_url}&client_secret={client_secret}&code={}",
-                query.code
-            ))
-            .header("Content-Length", "0")
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .expect("failed to get a response")
-            .json()
-            .await
-            .expect("failed to get a payload");
+        if Regex::new(r"^[a-zA-Z0-9-._~]+$")
+            .unwrap()
+            .is_match(&query.code)
+        {
+            let answer = Command::new("curl")
+            .arg("-XPOST")
+            .args(["-H", "Content-Length: 0"])
+            .args(["-H", "Accept: application/json"])
+            .arg(format!(
+                "{token_url}?grant_type=authorization_code&client_id={client_id}&redirect_uri={redirect_url}&client_secret={client_secret}&code={}", &query.code
+            )).output().unwrap();
 
-        if let Some(Value::String(token)) = answer.get("access_token") {
-            return HttpResponse::Ok()
-            .insert_header(("Set-Cookie", format!("token={token}; Path=/; HttpOnly; Secure; SameSite=None")))
-            .insert_header(("Content-Type", "text/html"))
-            .body("<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url='/'\"></head><body></body></html>");
+            let answer: serde_json::Value = serde_json::from_slice(&answer.stdout).unwrap();
+            if let Some(Value::String(token)) = answer.get("access_token") {
+                return HttpResponse::Ok()
+                .insert_header(("Set-Cookie", format!("token={token}; Path=/; HttpOnly; Secure; SameSite=None")))
+                .insert_header(("Content-Type", "text/html"))
+                .body("<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url='/'\"></head><body></body></html>");
+            }
+        } else {
+            return HttpResponse::UnprocessableEntity().body("invalid authorization_code format");
         }
     }
 

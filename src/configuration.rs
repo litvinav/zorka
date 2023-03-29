@@ -1,8 +1,11 @@
+use std::process::Command;
+
 use actix_web::{http::header::HeaderMap, HttpResponse};
 use base64::{
     alphabet,
     engine::{general_purpose, Engine as _, GeneralPurpose},
 };
+use regex::Regex;
 use serde::Deserialize;
 
 #[derive(Deserialize, Clone)]
@@ -97,15 +100,17 @@ pub async fn handle_authorization(
         } => {
             if let Some(value) = headermap.get("Cookie") {
                 let token = &value.to_str().unwrap().to_string()[6..];
-                if let Ok(response) = reqwest::Client::new()
-                    .get(introspect_url)
-                    .bearer_auth(token)
-                    .header("Accept", "application/vnd.github+json")
-                    .header("User-Agent", "")
-                    .send()
-                    .await
-                {
-                    if response.status().as_u16() < 300 {
+                if Regex::new(r"^[a-zA-Z0-9-._~]+$").unwrap().is_match(token) {
+                    if let Ok(_response) = Command::new("curl")
+                        .arg("-XPOST")
+                        .arg("--fail")
+                        .args(["-H", "Content-Length: 0"])
+                        .args(["-H", "Accept: */*"])
+                        .args(["-H", "User-Agent: "])
+                        .args(["-H", &format!("Authorization: Bearer {token}")])
+                        .arg(introspect_url)
+                        .output()
+                    {
                         return None;
                     }
                 }

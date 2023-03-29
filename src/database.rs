@@ -1,4 +1,3 @@
-use crate::schema::ShortcutEntry;
 use regex::Regex;
 use std::sync::RwLock;
 use std::{collections::HashMap, sync::Arc};
@@ -7,41 +6,13 @@ use std::{
     io::{BufRead, BufReader},
 };
 
-fn seeded() -> HashMap<String, ShortcutEntry> {
-    let mut data: HashMap<String, ShortcutEntry> = HashMap::new();
-    match fs::File::open("./seed.csv") {
-        Ok(file) => {
-            let buf = BufReader::new(file);
-            let regex =
-                Regex::new(
-                    r"^(?P<slug>[a-z0-9]+),(?P<url>https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)),(?P<status>((un)?trusted)),(?P<since>\d+),(?P<until>\d+)$"
-                ).expect("invalid regex");
-            for content in buf.lines().flatten() {
-                if let Some(capture) = regex.captures(&content) {
-                    if let (Some(slug), Some(url), Some(status), Some(since), Some(until)) = (
-                        capture.name("slug"),
-                        capture.name("url"),
-                        capture.name("status"),
-                        capture.name("since"),
-                        capture.name("until"),
-                    ) {
-                        data.insert(
-                            slug.as_str().to_string(),
-                            ShortcutEntry {
-                                slug: slug.as_str().to_string(),
-                                url: url.as_str().to_string(),
-                                status: status.as_str().to_string(),
-                                since: since.as_str().to_string(),
-                                until: until.as_str().to_string(),
-                            },
-                        );
-                    }
-                }
-            }
-        }
-        Err(_) => log::debug!("Skipping seeding since no seed.csv was found."),
-    }
-    data
+#[derive(Clone)]
+pub struct ShortcutEntry {
+    pub slug: String,
+    pub url: String,
+    pub status: String,
+    pub since: String,
+    pub until: String,
 }
 
 #[derive(Clone)]
@@ -97,4 +68,42 @@ impl Database {
 pub fn setup() -> Database {
     let data = seeded();
     Database::new(data)
+}
+
+
+fn seeded() -> HashMap<String, ShortcutEntry> {
+    let mut data: HashMap<String, ShortcutEntry> = HashMap::new();
+    match fs::File::open("./seed.csv") {
+        Ok(file) => {
+            let buf = BufReader::new(file);
+            let regex =
+                Regex::new(
+                    r"^(?P<slug>[a-z0-9]+),(?P<url>https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)),(?P<status>((un)?trusted)),(?P<since>\d+),(?P<until>\d+)$"
+                ).expect("invalid regex");
+            for content in buf.lines().flatten() {
+                if let Some(capture) = regex.captures(&content) {
+                    if let (Some(slug), Some(url), Some(status), Some(since), Some(until)) = (
+                        capture.name("slug"),
+                        capture.name("url"),
+                        capture.name("status"),
+                        capture.name("since"),
+                        capture.name("until"),
+                    ) {
+                        data.insert(
+                            slug.as_str().to_string(),
+                            ShortcutEntry {
+                                slug: slug.as_str().to_string(),
+                                url: url.as_str().to_string(),
+                                status: status.as_str().to_string(),
+                                since: since.as_str().to_string(),
+                                until: until.as_str().to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+        }
+        Err(_) => log::debug!("Skipping seeding since no seed.csv was found."),
+    }
+    data
 }

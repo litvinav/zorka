@@ -11,20 +11,16 @@ mod tests;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    dotenv::dotenv().ok();
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("zorka=error"));
-
-    let data = database::setup();
-    let tera = Tera::new("./templates/**/*").unwrap();
-    let config = get_config();
+    let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "zorka=error".to_string());
+    env_logger::init_from_env(log_level);
 
     log::info!("Starting HTTP server at http://127.1:8080");
     HttpServer::new(move || {
         App::new()
             .service(health)
-            .app_data(web::Data::new(config.clone()))
-            .app_data(web::Data::new(data.clone()))
-            .app_data(web::Data::new(tera.clone()))
+            .app_data(web::Data::new(get_config()))
+            .app_data(web::Data::new(database::setup()))
+            .app_data(web::Data::new(Tera::new("./templates/**/*").unwrap()))
             .service(find)
             .service(create)
             .service(delete)

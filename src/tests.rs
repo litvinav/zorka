@@ -31,7 +31,7 @@ mod testing {
     #[actix_web::test]
     async fn admin_dashboard() {
         let data = Database::new(HashMap::new());
-        let tera = tera::Tera::new(concat!(env!("CARGO_MANIFEST_DIR"), "/templates/**/*")).unwrap();
+        let tera = tera::Tera::new("./templates/**/*").unwrap();
         // Setup with Basic Authorization protection
         let config = Configuration {
             auth: crate::configuration::Authentication::Basic {
@@ -107,9 +107,6 @@ mod testing {
                 .unwrap(),
             "application/json"
         );
-
-        // // May return 404 in GET immediately after PUT during DB write
-        // thread::sleep(Duration::from_secs(1));
 
         // Get redirection with the newly created slug
         let anwser: PutShortcutAnwser = test::read_body_json(interaction).await;

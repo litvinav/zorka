@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+// CRUD DTOs
+
 #[derive(Deserialize)]
 pub struct GetShortcut {
     pub slug: String,
@@ -68,15 +70,4 @@ pub struct Countdown {
 pub struct Share {
     pub slug: String,
     pub vector: String,
-}
-
-// DATA
-
-#[derive(Clone)]
-pub struct ShortcutEntry {
-    pub slug: String,
-    pub url: String,
-    pub status: String,
-    pub since: String,
-    pub until: String,
 }
