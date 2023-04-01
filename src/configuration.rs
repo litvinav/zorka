@@ -101,13 +101,12 @@ pub async fn handle_authorization(
             if let Some(value) = headermap.get("Cookie") {
                 let token = &value.to_str().unwrap().to_string()[6..];
                 if Regex::new(r"^[a-zA-Z0-9-._~]+$").unwrap().is_match(token) {
-                    if let Ok(_response) = Command::new("curl")
+                    if let Ok(_response) = Command::new("/usr/bin/curl")
                         .arg("-XPOST")
                         .arg("--fail")
                         .args(["-H", "Content-Length: 0"])
                         .args(["-H", "Accept: */*"])
-                        .args(["-H", "User-Agent: "])
-                        .args(["-H", &format!("Authorization: Bearer {token}")])
+                        .args(["--oauth2-bearer", token])
                         .arg(introspect_url)
                         .output()
                     {

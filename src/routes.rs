@@ -283,7 +283,7 @@ pub async fn code(config: Data<Configuration>, query: Query<Oauth2Code>) -> impl
             .unwrap()
             .is_match(&query.code)
         {
-            let answer = Command::new("curl")
+            let answer = Command::new("/usr/bin/curl")
             .arg("-XPOST")
             .args(["-H", "Content-Length: 0"])
             .args(["-H", "Accept: application/json"])
@@ -294,7 +294,7 @@ pub async fn code(config: Data<Configuration>, query: Query<Oauth2Code>) -> impl
             let answer: serde_json::Value = serde_json::from_slice(&answer.stdout).unwrap();
             if let Some(Value::String(token)) = answer.get("access_token") {
                 return HttpResponse::Ok()
-                .insert_header(("Set-Cookie", format!("token={token}; Path=/; HttpOnly; Secure; SameSite=None")))
+                .insert_header(("Set-Cookie", format!("token={token}; Path=/; HttpOnly; Secure; SameSite=Strict")))
                 .insert_header(("Content-Type", "text/html"))
                 .body("<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url='/'\"></head><body></body></html>");
             }

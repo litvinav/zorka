@@ -45,23 +45,9 @@ These client pages support light and dark mode.
 | ------------------------------------- | ------------------------------------- | ------------------------------------- |
 | ![countdown](/docs/img/countdown.png) | ![approval](/docs/img/approval.png)   | ![blocker](/docs/img/blocker.png)     |
 
-<p>
-<svg fill="#ffd700" class="inline-block" fill="currentColor" focusable="false" aria-hidden="true" viewBox="0 0 24 24" height="20" width="20">
-<path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm3.3 14.71L11 12.41V7h2v4.59l3.71 3.71-1.42 1.41z"></path>
-</svg>
 Countdown - behaives like a waiting lobby for not yet ready targets. Will reload the page after the countdown hits 0.
-</p>
-<p>
-<svg fill="#4169e1" class="inline-block" focusable="false" aria-hidden="true" viewBox="0 0 24 24" height="20" width="20"><path d="M12 2 4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3zm-1.06 13.54L7.4 12l1.41-1.41 2.12 2.12 4.24-4.24 1.41 1.41-5.64 5.66z"></path>
-</svg>
 Approval - the URL is considered as 'untrusted' and the user should confirm the redirect.
-</p>
-<p>
-<svg fill="#e14148" class="inline-block" focusable="false" aria-hidden="true" viewBox="0 0 24 24" height="20" width="20">
-<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11H7v-2h10v2z"></path>
-</svg>
 Blocker - the redirect timed out and the redirect target is not reachable.
-</p>
 
 Since i cannot cover all variety of languages, Zorka expects you to bring your own internationalization. You can use [the default configuration](./configuration.yaml) for English or use it as reference for your language.
 
@@ -149,6 +135,7 @@ services:
         reservations:
           cpus: '0.1'
           memory: 20M
+    cap_drop: [ALL]
 ```
 If you are feeling paranoid or cannot use a amd64 image, you can always build Zorka from source and store the image in your registry.
 
