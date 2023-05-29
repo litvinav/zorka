@@ -19,13 +19,14 @@ use regex::Regex;
 use serde_json::Value;
 use std::{
     process::Command,
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 use tera::{Context, Tera};
 
 #[get("/")]
 pub async fn dashboard(
-    data: Data<Database>,
+    data: Data<Arc<Database>>,
     tera: Data<Tera>,
     config: Data<Configuration>,
     req: HttpRequest,
@@ -60,36 +61,33 @@ pub async fn dashboard(
     }
 }
 
-#[get("/s")]
-pub async fn render(
-    data: Data<Database>,
+#[get("/store")]
+pub async fn store(
+    data: Data<Arc<Database>>,
     config: Data<Configuration>,
     req: HttpRequest,
 ) -> impl Responder {
     if let Some(res) = handle_authorization(config.as_ref(), req.headers()).await {
         return res;
     }
-
-    let csv = data
-        .read_all()
-        .iter()
-        .map(|row| {
-            format!(
-                "{},{},{},{},{}",
-                row.slug, row.url, row.status, row.since, row.until,
-            )
-        })
-        .collect::<Vec<String>>()
-        .join("\n");
+    let csv = data.to_csv();
     HttpResponse::Ok()
         .append_header(("Content-Type", "text/csv; charset utf-8"))
         .append_header(("Content-Disposition", "attachment; filename=\"seed.csv\""))
         .body(csv)
 }
 
+#[get("/backup")]
+pub async fn backup(data: Data<Arc<Database>>) -> impl Responder {
+    match data.backup() {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
 #[get("/s/{slug}")]
 pub async fn find(
-    data: Data<Database>,
+    data: Data<Arc<Database>>,
     tera: Data<Tera>,
     config: Data<Configuration>,
     path: Path<GetShortcut>,
@@ -201,7 +199,7 @@ pub async fn share(
 
 #[put("/s")]
 pub async fn create(
-    data: Data<Database>,
+    data: Data<Arc<Database>>,
     body: Json<PutShortcut>,
     config: Data<Configuration>,
     req: HttpRequest,
@@ -237,7 +235,6 @@ pub async fn create(
     };
 
     if data.upsert(body.slug.clone(), entry) {
-        log::debug!("Put a new slug '{}'.", &body.slug);
         HttpResponse::Created().json(PutShortcutAnwser {
             slug: body.slug.clone(),
         })
@@ -248,7 +245,7 @@ pub async fn create(
 
 #[delete("/s")]
 pub async fn delete(
-    data: Data<Database>,
+    data: Data<Arc<Database>>,
     body: Json<DeleteShortcut>,
     config: Data<Configuration>,
     req: HttpRequest,

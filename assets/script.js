@@ -174,7 +174,7 @@ function put(event) {
 
           const current = document.getElementById(form.slug)
           if (current == null) {
-            document.querySelector('table').appendChild(row)
+            document.querySelector('table > tbody').appendChild(row)
           } else {
             current.replaceWith(row)
           }
