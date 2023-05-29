@@ -9,3 +9,5 @@ package*.json
 /*.sh
 /*.yaml
 !/configuration.yaml
+/backups/
+/backup.zorka

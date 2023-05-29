@@ -22,5 +22,6 @@ COPY --chown=zorka:zorka --from=builder       /app/target/release/zorka /app/zor
 EXPOSE 8080
 RUN apk add curl --no-cache && rm /usr/sbin/sendmail \
  && addgroup zorka && adduser -S zorka -G zorka -H -D
+
 USER zorka
 ENTRYPOINT ["/app/zorka"]

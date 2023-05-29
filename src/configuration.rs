@@ -8,49 +8,37 @@ use base64::{
 use regex::Regex;
 use serde::Deserialize;
 
-#[derive(Deserialize, Clone)]
-#[allow(non_camel_case_types)]
-pub enum AuthenticationOptions {
-    none,
-    basic {
-        username: String,
-        password: String,
-    },
-    oauth2 {
-        client_id: String,
-        client_secret: String,
-        auth_url: String,
-        scope: String,
-        token_url: String,
-        introspect_url: String,
-        redirect_url: String,
-    },
+#[derive(Clone, Deserialize, Default)]
+pub struct Configuration {
+    pub auth: Authentication,
+    pub i18n: Internationalization,
+    pub server: ServerInformation,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
 pub enum Authentication {
+    #[default]
     None,
-    Basic {
+    BasicPrerendered {
         header: String,
+    },
+    Basic {
+        username: String,
+        password: String,
     },
     OAuth2 {
         client_id: String,
         client_secret: String,
-        scope: String,
         auth_url: String,
+        scope: String,
         token_url: String,
         introspect_url: String,
         redirect_url: String,
     },
 }
 
-#[derive(Deserialize, Clone, Default)]
-pub struct Untrusted {
-    pub label: String,
-    pub button: String,
-}
-
-#[derive(Deserialize, Clone, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct Internationalization {
     pub lang: String,
     pub dir: String,
@@ -59,24 +47,15 @@ pub struct Internationalization {
     pub approval: Untrusted,
 }
 
-#[derive(Deserialize, Clone, Default)]
+#[derive(Clone, Deserialize, Default)]
+pub struct Untrusted {
+    pub label: String,
+    pub button: String,
+}
+
+#[derive(Clone, Deserialize, Default)]
 pub struct ServerInformation {
     pub public_origin: String,
-}
-
-#[derive(Deserialize, Clone)]
-pub struct ConfigurationFile {
-    #[serde(with = "serde_yaml::with::singleton_map")]
-    pub auth: AuthenticationOptions,
-    pub i18n: Internationalization,
-    pub server: ServerInformation,
-}
-
-#[derive(Clone)]
-pub struct Configuration {
-    pub auth: Authentication,
-    pub i18n: Internationalization,
-    pub server: ServerInformation,
 }
 
 #[derive(Deserialize)]
@@ -124,7 +103,7 @@ pub async fn handle_authorization(
                     .finish(),
             )
         }
-        Authentication::Basic { header } => {
+        Authentication::BasicPrerendered { header } => {
             if let Some(val) = headermap.get("Authorization") {
                 if header == val.to_str().unwrap_or_default() {
                     return None;
@@ -135,42 +114,42 @@ pub async fn handle_authorization(
                     .insert_header(("WWW-Authenticate", "Basic realm=\"Zorka\""))
                     .finish(),
             )
-        }
+        },
+        Authentication::Basic {password: _, username: _} => unimplemented!("runtime lookup of basic auth is not implemented")
     }
 }
 
 pub fn get_config() -> Configuration {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/configuration.yaml");
-    let filereader = std::fs::File::open(path).expect("missing configuration!");
-    let config: ConfigurationFile =
+    let filereader = std::fs::File::open("./configuration.yaml").expect("missing configuration!");
+    let config: Configuration =
         serde_yaml::from_reader(&filereader).expect("unparsable configuration!");
 
-    if std::env::var("DELETE_CONFIG").unwrap_or_else(|_| "false".to_string()) == *"true" {
-        std::fs::remove_file(path).expect("could not delete configuration after loading!");
-        log::info!("Removed the configuration.yaml.");
-    }
-
     match config.auth {
-        AuthenticationOptions::none => Configuration {
+        Authentication::None => Configuration {
             auth: Authentication::None,
             i18n: config.i18n,
             server: config.server,
         },
-        AuthenticationOptions::basic { username, password } => {
+        Authentication::Basic { username, password } => {
             // Prerender Basic Auth header and just compare at runtime
             const ENGINE: GeneralPurpose =
                 GeneralPurpose::new(&alphabet::URL_SAFE, general_purpose::PAD);
             let b64 = ENGINE.encode(format!("{username}:{password}"));
 
             Configuration {
-                auth: Authentication::Basic {
-                    header: format!("Basic {b64}"),
-                },
+                auth: Authentication::BasicPrerendered { header: format!("Basic {b64}") },
                 i18n: config.i18n,
                 server: config.server,
             }
         }
-        AuthenticationOptions::oauth2 {
+        Authentication::BasicPrerendered { header } => {
+            Configuration {
+                auth: Authentication::BasicPrerendered { header },
+                i18n: config.i18n,
+                server: config.server,
+            }
+        }
+        Authentication::OAuth2 {
             client_id,
             client_secret,
             scope,
