@@ -1,6 +1,7 @@
 use regex::Regex;
-use std::fs::OpenOptions;
-use std::io::Write;
+use std::fs::{metadata, remove_file};
+use std::io::ErrorKind;
+use std::path::PathBuf;
 use std::sync::RwLock;
 use std::{collections::HashMap, sync::Arc};
 use std::{
@@ -19,15 +20,17 @@ pub struct ShortcutEntry {
 }
 
 pub struct Database {
+    backup: bool,
     instance_id: String,
     data: Arc<RwLock<HashMap<String, ShortcutEntry>>>,
 }
 
 impl Database {
-    pub fn new(data: HashMap<String, ShortcutEntry>, instance_id: String) -> Self {
+    pub fn new(backup: bool) -> Self {
         Self {
-            instance_id,
-            data: Arc::new(RwLock::new(data)),
+            backup,
+            data: Arc::new(RwLock::new(restore_data())),
+            instance_id: Uuid::new_v4().to_string(),
         }
     }
     pub fn read(&self, slug: &String) -> Option<ShortcutEntry> {
@@ -80,126 +83,96 @@ impl Database {
             .collect::<Vec<String>>()
             .join("\n")
     }
-
-    pub fn backup(&self) -> Result<(), std::io::Error> {
-        match std::fs::metadata("./backups") {
-            Ok(meta) if !meta.is_dir() => std::fs::create_dir("backups").unwrap(),
-            Err(_) => std::fs::create_dir("backups").unwrap(),
-            _ => {}
-        };
-
-        std::fs::write(format!("./backups/{}.csv", self.instance_id), self.to_csv())
-    }
 }
 
-pub fn setup() -> Database {
-    let instance_id = Uuid::new_v4().to_string();
-    let data = restore_data(&instance_id);
-    if let Ok(backup_period) = std::env::var("BACKUP_CRON") {
-        println!(
-            "echo '{backup_period} echo curl http://127.1:8080/backup' > /etc/cron.d/zorka_backup"
-        );
-    }
-    Database::new(data, instance_id)
-}
-
-#[cfg(not(test))]
 impl Drop for Database {
     fn drop(&mut self) {
-        println!("Backing up database pre shutdown...");
-        self.backup()
-            .expect("could not backup the database on exit");
+        if self.backup {
+            println!("Backing up database pre shutdown...");
+            match std::fs::create_dir("backups") {
+                Err(e) if e.kind() != ErrorKind::AlreadyExists => println!("{e}"),
+                _ => {}
+            };
+            std::fs::write(format!("./backups/{}.csv", self.instance_id), self.to_csv())
+                .expect("could not backup the database on exit");
+        }
     }
 }
 
-fn restore_data(instance_id: &String) -> HashMap<String, ShortcutEntry> {
+fn restore_data() -> HashMap<String, ShortcutEntry> {
     let mut data: HashMap<String, ShortcutEntry> = HashMap::new();
-
-    let mut relevant_targets: Vec<String> = vec![];
-    if let Ok(structure) = std::fs::read_to_string("./backup.zorka") {
-        for entry in structure.split('\n') {
-            if entry.len() > 36 {
-                let deprecators: Vec<&str> = entry[49..entry.len()].split(',').collect();
-                for i in relevant_targets.len()..0 {
-                    if deprecators.contains(&relevant_targets[i].as_str()) {
-                        relevant_targets.remove(i);
+    let files = match std::fs::read_dir("./backups") {
+        Ok(entries) => {
+            let mut paths = vec![];
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if entry.metadata().unwrap().is_file() {
+                        paths.push(entry.path());
                     }
                 }
             }
-            if entry.len() >= 36 {
-                relevant_targets.push(entry[0..36].to_string());
+            paths
+        }
+        Err(e) => {
+            if e.kind() == ErrorKind::NotFound {
+                match std::fs::create_dir("./backups") {
+                    Err(e) if e.kind() != ErrorKind::AlreadyExists => println!("{e}"),
+                    _ => {},
+                }
+            } else {
+                println!("{e}");
             }
+            vec![]
+        }
+    };
+
+    if files.is_empty() {
+        match metadata("./seed.csv") {
+            Ok(meta) if meta.is_file() => load_data(&mut data, &PathBuf::from("./seed.csv")),
+            _ => {},
         }
     } else {
-        std::fs::write("./backup.zorka", "")
-            .expect("cannot creat backup.zorka in a read-only filesystem");
-    }
-
-    let mut files_to_process = vec![];
-    for uuid in &relevant_targets {
-        let path = format!("./backups/{uuid}.csv");
-        match std::fs::metadata(&path) {
-            Ok(meta) if meta.is_file() => files_to_process.push(path),
-            _ => println!("could not load {path}"),
-        }
-    }
-
-    let mut deprecated = "".into();
-    if files_to_process.is_empty() {
-        if let Ok(meta) = std::fs::metadata("./seed.csv") {
-            if meta.is_file() {
-                load_data(&mut data, vec!["./seed.csv".into()]);
+        for path in files {
+            load_data(&mut data, &path);
+            if let Err(e) = remove_file(&path) {
+                println!("{e}");
             }
         }
-    } else {
-        load_data(&mut data, files_to_process);
-        deprecated = format!(" DEPRECATED: {}", relevant_targets.join(","));
     }
-
-    OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open("./backup.zorka")
-        .expect("could not open the backup zorka file")
-        .write_all(format!("{instance_id}{}\n", deprecated).as_bytes())
-        .expect("could not create a new entry in backup.zorka");
-
     data
 }
 
-fn load_data(data: &mut HashMap<String, ShortcutEntry>, files: Vec<String>) {
-    for path in files {
-        match fs::File::open(&path) {
-            Ok(file) => {
-                let buf = BufReader::new(file);
-                let regex =
-                    Regex::new(
-                        r"^(?P<slug>[a-z0-9]+),(?P<url>https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)),(?P<status>((un)?trusted)),(?P<since>\d+),(?P<until>\d+)$"
-                    ).expect("invalid regex");
-                for content in buf.lines().flatten() {
-                    if let Some(capture) = regex.captures(&content) {
-                        if let (Some(slug), Some(url), Some(status), Some(since), Some(until)) = (
-                            capture.name("slug"),
-                            capture.name("url"),
-                            capture.name("status"),
-                            capture.name("since"),
-                            capture.name("until"),
-                        ) {
-                            data.insert(
-                                slug.as_str().to_string(),
-                                ShortcutEntry {
-                                    slug: slug.as_str().to_string(),
-                                    url: url.as_str().to_string(),
-                                    status: status.as_str().to_string(),
-                                    since: since.as_str().to_string(),
-                                    until: until.as_str().to_string(),
-                                },
-                            );
-                        }
+fn load_data(data: &mut HashMap<String, ShortcutEntry>, path: &PathBuf) {
+    match fs::File::open(&path) {
+        Ok(file) => {
+            let buf = BufReader::new(file);
+            let regex =
+                Regex::new(
+                    r"^(?P<slug>[a-z0-9]+),(?P<url>https?://(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()!@:%_\+.~#?&//=]*)),(?P<status>((un)?trusted)),(?P<since>\d+),(?P<until>\d+)$"
+                ).expect("invalid regex");
+            for content in buf.lines().flatten() {
+                if let Some(capture) = regex.captures(&content) {
+                    if let (Some(slug), Some(url), Some(status), Some(since), Some(until)) = (
+                        capture.name("slug"),
+                        capture.name("url"),
+                        capture.name("status"),
+                        capture.name("since"),
+                        capture.name("until"),
+                    ) {
+                        data.insert(
+                            slug.as_str().to_string(),
+                            ShortcutEntry {
+                                slug: slug.as_str().to_string(),
+                                url: url.as_str().to_string(),
+                                status: status.as_str().to_string(),
+                                since: since.as_str().to_string(),
+                                until: until.as_str().to_string(),
+                            },
+                        );
                     }
                 }
             }
-            Err(e) => println!("Skipping seeding {path}: {e}"),
         }
+        Err(e) => println!("Skipping seeding {path:?}: {e}"),
     }
 }

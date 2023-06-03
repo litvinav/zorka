@@ -77,14 +77,6 @@ pub async fn store(
         .body(csv)
 }
 
-#[get("/backup")]
-pub async fn backup(data: Data<Arc<Database>>) -> impl Responder {
-    match data.backup() {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    }
-}
-
 #[get("/s/{slug}")]
 pub async fn find(
     data: Data<Arc<Database>>,

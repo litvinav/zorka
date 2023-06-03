@@ -1,4 +1,3 @@
-
 ## All routes
 
 ```sh
@@ -6,21 +5,13 @@ GET     /            # web UI
 GET     /share/:slug # share UI
 GET     /s/:slug     # short url redirecting to the target
 GET     /store       # store all current shortcuts in a csv format file
-GET     /backup      # Trigger backup for all shortcuts of the current instance to ./backups/<uuid>
 PUT     /s           # put route for new entries during runtime
 DELETE  /s           # deletes entries during runtime by slug
 GET     /health      # readiness and liveness health
 ```
+The `/store` route allows you to store the current shortcuts for your version in the csv format. This could be used to create a updated `./seed.csv` from one instance and redeploy all instances. This also allows "fresh" redeploys if you place the seed.csv into the programs root.
 
-You can scale this url shortener to your requirements via seeding, since its hosting the same url's on all instances.
-Seeding on launch from a `./seed.csv` is seen in the example section.
-
-Notice the `/store` route that allows you to store the current shortcuts for your version in the csv format. This could be used to create a updated `./seed.csv` from one instance and redeploy all instances. This also allows "fresh" redeploys if you are mounting the seed.csv via a ConfigMap in a Kubernetes environment.
-
-Also Zorka supports backups. On demand and on shutdown the database is dumped into a csv file for backups. You can trigger a backup via the /backup route.
-If backups are present, Zorka will restore the database based on the backups and not on the initial seeding file.
-
-The backups are stored based on a custom algorithm and custom .zorka files. More on .zorka files in [docs/en/zorka_files_and_backups.md](/docs/en/zorka_files_and_backups.md).
+Also Zorka supports backups. On shutdown the database is dumped into a csv file for backups. If backups are present, Zorka will restore the database based on the backups and not on the initial seeding file. Both restores are optional.
 
 ### What data is collected?
 
@@ -48,8 +39,7 @@ Since i cannot cover all variety of languages, Zorka expects you to bring your o
 
 ### Authentication
 
-The current idea around Zorka is to only expose `/s/:slug` routes but if necessary,
-you can protect the shortcut CRUD operations and the dashboard routes.
+The current idea around Zorka is to only expose `/s/:slug` routes but if necessary, you can protect the shortcut CRUD operations and the dashboard routes.
 
 Please refer to [Configuration via configuration.yaml](#deployment-via-composeyaml) in the examples section, if you are interested in authentication on the admin routes.
 
@@ -66,18 +56,18 @@ falcon,https://www.spacex.com/vehicles/falcon-9,untrusted,0,253370764861000
 ysd,https://yandex.ru/search/?text=yandex+self+driving,trusted,0,1678406461000
 zorka,https://github.com/litvinav/zorka,untrusted,1679270461000,253370764861000
 ```
-Each line consists of the slug, a full url, trust and the two values for the availability window as two u128 values, representing milliseconds since the unix epoch. For example in JavaScript you can get the date with `new Date().getTime()`.
+Each line consists of the slug, a full url, trust and the two values for the availability window as two u128 values, representing milliseconds since the unix epoch. 
 
-The slug can be any text with a length bigger than 0 up to 64 characters.
+The slug can be any text with a length between 0 and up to including 64 characters.
 The trust level can be currently set to 'trusted' and 'untrusted'. In case of untrusted the user has to approve his redirect and sees the URL he will be visiting.
 
-While you can have a custom skript generating this seed.csv file, you could also just configure redirects via the UI and download it straight from Zorka in the correct syntax.
+While you can have a custom script generating this seed.csv file, just configure redirects via the UI and download it straight from Zorka or use a backup for seeding in its correct syntax.
 
 ### Configuration via configuration.yaml
 
 >Option 3: You get most of the options from the well-known page a of OAuth2 service. For e.g. Google: https://accounts.google.com/.well-known/openid-configuration
 
->Also there is no "stay logged in" functionality. Refresh tokens are ignored and access tokens are cleaned up on browser close. Either the introspection verifies you or the access to admin pages is blocked. This should be good enough for backoffice access.
+>Also there is no "stay logged in" functionality. Refresh tokens are ignored and access tokens are cleaned up on browser close. Either the introspection verifies you or the access to admin pages is blocked. This should be good enough for most backoffice access scenarios.
 
 ```yaml
 auth: # Pick one option
@@ -111,31 +101,6 @@ server:
   public_origin: http://localhost:8080
 ```
 
-### Deployment via compose.yaml
-```yaml
-services:
-  zorka:
-    image: litvinav/zorka:latest
-    ports:
-    - 8080:8080
-    volumes:
-    - ./seed.csv:/app/seed.csv:ro
-    - ./configuration.yaml:/app/configuration.yaml
-    deploy:
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-        window: 120s
-      resources:
-        limits:
-          cpus: '0.2'
-          memory: 30M
-        reservations:
-          cpus: '0.1'
-          memory: 20M
-    cap_drop: [ALL]
-```
 If you are feeling paranoid or cannot use a amd64 image, you can always build Zorka from source and store the image in your registry.
 
 ### Preview

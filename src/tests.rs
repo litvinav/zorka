@@ -1,10 +1,8 @@
 #[cfg(test)]
 mod testing {
-    use std::{collections::HashMap, fs, sync::Arc};
-
     use crate::{
         configuration::{Configuration, Internationalization, ServerInformation},
-        database::{self, Database},
+        database::{Database, ShortcutEntry},
         health,
         routes::*,
         schema::PutShortcutAnwser,
@@ -19,6 +17,7 @@ mod testing {
         App,
     };
     use serde_json::json;
+    use std::{sync::Arc, fs::{read_dir, read_to_string, remove_dir_all}};
 
     #[actix_web::test]
     async fn healthcheck() {
@@ -30,8 +29,7 @@ mod testing {
 
     #[actix_web::test]
     async fn admin_dashboard() {
-        let instance_id = "".into();
-        let data = Arc::new(Database::new(HashMap::new(), instance_id));
+        let data = Arc::new(Database::new(false));
         let tera = tera::Tera::new("./templates/**/*").unwrap();
         // Setup with Basic Authorization protection
         let config = Configuration {
@@ -69,8 +67,7 @@ mod testing {
     async fn url_shortening() {
         let initial_target_uri = "https://github.com";
         let tera = tera::Tera::new("./templates/**/*").unwrap();
-        let instance_id = "".into();
-        let data = Arc::new(Database::new(HashMap::new(), instance_id));
+        let data = Arc::new(Database::new(false));
         let config = Configuration {
             auth: crate::configuration::Authentication::None,
             i18n: Internationalization::default(),
@@ -136,64 +133,26 @@ mod testing {
     }
 
     #[actix_web::test]
-    async fn store_and_backup() {
-        let seed = "garmata,https://github.com/litvinav/garmata,trusted,0,253370761200000";
-        std::fs::write("./seed.csv", seed).unwrap();
+    async fn backups() {
+        let database = Database::new(true);
 
-        let tera = tera::Tera::new("./templates/**/*").unwrap();
-        let data = Arc::new(database::setup()); // Full DB setup
-        let config = Configuration {
-            auth: crate::configuration::Authentication::None,
-            i18n: Internationalization::default(),
-            server: ServerInformation::default(),
+        let slug: String = "garmata".into();
+        let value = ShortcutEntry {
+            slug: slug.clone(),
+            url: "https://github.com/litvinav/garmata".into(),
+            status: "trusted".into(),
+            since: "0".into(),
+            until: "253370761200000".into(),
         };
 
-        let app = test::init_service(
-            App::new()
-                .app_data(Data::new(config))
-                .app_data(Data::new(data))
-                .app_data(Data::new(tera))
-                .service(create)
-                .service(backup),
-        )
-        .await;
+        database.upsert(slug, value);
+        drop(database);
 
-        // create a new entry on top of the initial state
-        let interaction = TestRequest::put()
-            .uri("/s")
-            .set_json(json!({
-                "url": "https://github.com/litvinav/zorka",
-                "slug": "zorka",
-                "approval": false,
-                "since": 0_u128,
-                "until": 253370761200000_u128
-            }))
-            .send_request(&app)
-            .await;
-        assert_eq!(interaction.response().status(), StatusCode::CREATED);
+        let dir_entries = read_dir("./backups");
+        let entry = dir_entries.unwrap().nth(0).unwrap().unwrap();
+        let content = read_to_string(entry.path()).unwrap();
+        assert_eq!(content, "garmata,https://github.com/litvinav/garmata,trusted,0,253370761200000");
 
-        // trigger backup
-        let interaction = TestRequest::get().uri("/backup").send_request(&app).await;
-        assert_eq!(interaction.response().status(), StatusCode::OK);
-
-        let backups_entry = fs::read_dir("./backups")
-            .unwrap()
-            .into_iter()
-            .nth(0)
-            .expect("backups folder is empty")
-            .unwrap();
-        let backup_file_content = fs::read_to_string(backups_entry.path()).unwrap();
-        let backup_file_content: Vec<&str> = backup_file_content.split("\n").collect();
-
-        // Race condition. Assert that the backup contains the expected entries. Order is not important.
-        let expected = vec![seed.to_string(), seed.replace("garmata", "zorka")];
-        for entry in backup_file_content {
-            assert!(expected.contains(&entry.to_string()));
-        }
-
-        // cleanup
-        fs::remove_file("./backup.zorka").unwrap();
-        fs::remove_file(backups_entry.path()).unwrap();
-        fs::remove_file("./seed.csv").unwrap();
+        remove_dir_all("./backups").expect("could not cleanup backups after test");
     }
 }
