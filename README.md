@@ -1,5 +1,5 @@
 <p align="center">
-<img src="./docs/img/logo.jpeg" alt="logo" width="240"/>
+<img src="./docs/img/logo.png" alt="logo" width="380"/>
 </p>
 
 ⭐ Zorka (Cyrillic: зорка, [ˈzorkə], star in Belarusian) is a fast, self contained and minimalistic url shortener, using [Actix](https://actix.rs/) to store and host the redirects.

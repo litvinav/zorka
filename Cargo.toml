@@ -16,3 +16,10 @@ tera = "1.17"
 base64 = "0.21"
 qrcode = "0.12"
 uuid = { version = "1.3.3", features = ["v4", "fast-rng", "macro-diagnostics"] }
+
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1
+panic = 'abort'
+strip = true
